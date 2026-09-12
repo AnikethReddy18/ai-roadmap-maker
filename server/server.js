@@ -23,17 +23,16 @@ app.use(express.json());
 
 // Connect to MongoDB
 mongoose.connect(MONGODB_URI, {
-  serverSelectionTimeoutMS: 2000 // Quick timeout to resolve fallbacks instantly
+  serverSelectionTimeoutMS: 10000 // 10s timeout for cloud Atlas DNS & SSL connection
 })
   .then(() => {
-    console.log('Connected to MongoDB database successfully!');
+    console.log('✅ Connected to MongoDB Atlas database successfully!');
   })
   .catch((err) => {
     global.useInMemoryDb = true;
     console.log('\n========================================================================');
-    console.log('[WARNING] Local MongoDB daemon was not detected or failed to connect.');
+    console.log('[WARNING] MongoDB connection failed:', err.message);
     console.log('👉 FALLING BACK TO IN-MEMORY DATABASE MODE.');
-    console.log('All user accounts, settings, and roadmaps will run successfully in-memory!');
     console.log('========================================================================\n');
   });
 
