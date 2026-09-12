@@ -1,0 +1,354 @@
+========================================================
+  COSMIC ROADMAP - AI ROADMAP GENERATOR
+  Project Workflows & Usage Guide (Updated)
+========================================================
+
+TABLE OF CONTENTS
+-----------------
+1. Project Overview
+2. Architecture Overview
+3. How to Run the Project
+4. All Workflows Explained
+   A. Authentication Workflow
+   B. Onboarding Quiz Workflow  [UPDATED]
+   C. Roadmap Generation Workflow
+   D. Sub-Roadmap Drill-Down Workflow
+   E. Resource Fetching Workflow
+   F. Node Completion Tracking Workflow
+   G. Settings / API Key Workflow
+   H. History & Navigation Workflow
+5. Backend API Reference
+6. Database Modes
+7. Technology Stack
+8. Recent Updates (Changelog)
+
+
+========================================================
+1. PROJECT OVERVIEW
+========================================================
+
+"Cosmic Roadmap" is an AI-powered personalized learning roadmap
+generator. Users create an account (providing a Gemini API key), 
+complete a dynamic 10-step AI-driven onboarding quiz that builds a 
+visual interest tree, and the app uses Google's Gemini AI to 
+generate structured, multi-phase learning curricula with nodes, 
+milestones, and study resources — all tailored to their profile.
+
+New users are greeted by "Cosmo", an interactive avatar guide, who
+walks them through a 10-step dynamic onboarding quiz powered by Gemini 
+to drill down into their specific interests. Their dashboard is then 
+personalized with roadmap suggestions generated dynamically based on 
+their quiz answers.
+
+
+========================================================
+2. ARCHITECTURE OVERVIEW
+========================================================
+
+The project is split into TWO separate processes:
+
+  [Frontend]  React + Vite app  (runs on port 5173 by default)
+  [Backend]   Express.js server (runs on port 5000 by default)
+
+Directory Structure:
+  /                        -> Root: Vite frontend config
+  /src/                    -> All frontend React source code
+    App.jsx                -> Main app shell, all state & handlers
+                              Includes: PersonalizedPresets component
+    /components/
+      AuthPortal.jsx       -> Login / Register screen [UPDATED]
+      AvatarGuide.jsx      -> Animated avatar with emotion states
+      OnboardingQuiz.jsx   -> [UPDATED] 10-step AI dynamic quiz
+      InterestTreeVis.jsx  -> [NEW] React Flow tree visualizer
+      RoadmapView.jsx      -> Renders roadmap phases & nodes
+      NodeDrawer.jsx       -> Slide-over panel for node details
+      SettingsModal.jsx    -> Gemini API key settings modal
+    /services/
+      gemini.js            -> Gemini AI API calls (live mode)
+      mockData.js          -> Fallback mock roadmap data (demo mode)
+  /server/                 -> All backend Express source code
+    server.js              -> Entry point; MongoDB connection, middleware
+    /routes/
+      auth.js              -> Register, Login, Profile, Settings, Onboarding
+      roadmaps.js          -> CRUD for roadmap documents
+      generate.js          -> AI generation endpoints (quiz-step, presets, roadmap, sub, resources)
+    /models/
+      User.js              -> Mongoose schema (interestTree, geminiApiKey)
+      Roadmap.js           -> Mongoose schema for roadmaps
+    /middleware/
+      auth.js              -> JWT verification middleware
+    /services/
+      gemini.js            -> Backend Gemini AI wrapper [UPDATED: quiz/preset generators]
+      inMemoryDb.js        -> In-memory fallback arrays (users, roadmaps)
+
+
+========================================================
+3. HOW TO RUN THE PROJECT
+========================================================
+
+STEP 1 - Install root frontend dependencies:
+  (from project root)
+  npm install
+
+STEP 2 - Install backend dependencies:
+  cd server
+  npm install
+  cd ..
+
+STEP 3 - Configure backend environment:
+  Edit server/.env and set:
+    PORT=5000
+    MONGODB_URI=mongodb://localhost:27017/ai-roadmap-generator
+    JWT_SECRET=your-secret-key-here
+
+  NOTE: MongoDB is OPTIONAL. If it is not running, the server
+  automatically falls back to an in-memory database.
+
+STEP 4 - Start the backend server:
+  (in one terminal)
+  cd server
+  node server.js
+    -> Server starts on http://localhost:5000
+
+STEP 5 - Start the frontend dev server:
+  (in another terminal, from project root)
+  npm run dev
+    -> Frontend starts on http://localhost:5173
+
+STEP 6 - Open the app:
+  Navigate to http://localhost:5173 in your browser.
+  The Vite dev server proxies /api/* requests to port 5000
+  automatically, so no CORS issues occur in development.
+
+
+========================================================
+4. ALL WORKFLOWS EXPLAINED
+========================================================
+
+----------------------------------------------------
+A. AUTHENTICATION WORKFLOW
+----------------------------------------------------
+The app gates all features behind a login. On first load:
+
+  1. App reads localStorage for a saved JWT token.
+  2. If no token -> AuthPortal (login/register screen) is shown.
+  3. If token exists -> App calls GET /api/auth/me to restore
+     the session and fetch the user's Gemini API key, interestTree,
+     and hasCompletedOnboarding status.
+  4. On failure (expired token) -> auto-logout and redirect
+     back to AuthPortal.
+
+REGISTER:
+  - User submits username, password, AND a Gemini API Key.
+  - POST /api/auth/register hashes the password (bcrypt)
+    and saves the user.
+  - A JWT (7-day expiry) is returned and stored in localStorage.
+  - User is immediately routed to the OnboardingQuiz.
+
+LOGIN:
+  - User submits username + password.
+  - POST /api/auth/login verifies password hash.
+  - A JWT is returned with hasCompletedOnboarding status.
+  - If hasCompletedOnboarding is true -> goes directly to dashboard.
+  - If hasCompletedOnboarding is false -> routed to OnboardingQuiz.
+
+----------------------------------------------------
+B. ONBOARDING QUIZ WORKFLOW  [UPDATED]
+----------------------------------------------------
+New users are guided through a 10-step dynamic AI quiz to map their interests.
+
+ROUTING LOGIC (in App.jsx):
+  - If user.hasCompletedOnboarding === false -> full-screen
+    OnboardingQuiz is rendered.
+  - If user.hasCompletedOnboarding === true -> normal dashboard.
+
+SPLIT-SCREEN UI (OnboardingQuiz.jsx):
+  - LEFT: The AvatarGuide ("Cosmo") asks dynamic questions fetched from 
+    POST /api/generate/quiz-step. Users pick from 4 AI-generated options.
+  - RIGHT: The InterestTreeVis renders a live React Flow graph of the user's 
+    selected answers, growing step by step.
+
+FINAL SUBMISSION:
+  - After 10 steps, the final tree path array is submitted to 
+    PUT /api/auth/onboarding as { interestTree }.
+  - Backend saves data and sets hasCompletedOnboarding: true.
+  - App state updates instantly -> user sees personalized dashboard.
+
+----------------------------------------------------
+C. ROADMAP GENERATION WORKFLOW
+----------------------------------------------------
+  1. User types a topic into the input field on the home screen
+     (or clicks a personalized preset card based on their profile).
+  2. App calls POST /api/generate with { topic }.
+  3. Backend checks if the user has a Gemini API key saved:
+       - WITH API KEY:  Calls Gemini AI for a real roadmap JSON.
+       - WITHOUT KEY:   Returns mock/demo data (after 1.5s delay).
+  4. The generated roadmap is saved via POST /api/roadmaps.
+  5. Roadmap appears in sidebar and main canvas immediately.
+
+----------------------------------------------------
+D. SUB-ROADMAP DRILL-DOWN WORKFLOW
+----------------------------------------------------
+  1. User clicks any node -> NodeDrawer opens on the right.
+  2. User clicks "Generate Deep Dive" in the NodeDrawer.
+  3. App calls POST /api/generate/sub with
+     { parentTopic, subTopic, nodeId }.
+  4. Sub-roadmap is generated, saved (isSubRoadmap: true),
+     and pushed onto the navStack array.
+  5. Breadcrumb trail appears: Dashboard > Parent > Sub Topic.
+  6. Clicking any breadcrumb navigates back up the stack.
+
+----------------------------------------------------
+E. RESOURCE FETCHING WORKFLOW
+----------------------------------------------------
+  1. When a node is clicked, handleFetchResources(node) is
+     called automatically alongside opening the NodeDrawer.
+  2. Resources are cached in memory by nodeId (resourcesCache).
+  3. If not cached: POST /api/generate/resources is called.
+  4. Backend returns study links via Gemini AI (or mock data).
+  5. Resources appear in the NodeDrawer as clickable links.
+
+----------------------------------------------------
+F. NODE COMPLETION TRACKING WORKFLOW
+----------------------------------------------------
+  1. In the NodeDrawer, user toggles "Mark Complete".
+  2. App calls PUT /api/roadmaps/:id/complete with
+     { nodeId, completed: true/false }.
+  3. Backend updates the roadmap's completedNodes map in the DB.
+  4. completedNodes state, navStack, and history feed all update.
+  5. Completed nodes show a visual checkmark on the canvas.
+
+----------------------------------------------------
+G. SETTINGS / API KEY WORKFLOW
+----------------------------------------------------
+  1. User clicks "Settings" (gear icon in sidebar or header).
+  2. SettingsModal opens.
+  3. User pastes their Google Gemini API key.
+  4. On save: PUT /api/auth/settings with { geminiApiKey }.
+  5. Key is stored on the user's DB account.
+  6. App mode switches from "Demo Mode" to "Live AI".
+
+----------------------------------------------------
+H. HISTORY & NAVIGATION WORKFLOW
+----------------------------------------------------
+
+SIDEBAR HISTORY:
+  - On login, GET /api/roadmaps fetches all saved root roadmaps.
+  - Only root roadmaps (isSubRoadmap: false) appear in the list.
+  - Clicking a history item sets navStack to load that roadmap.
+  - Trash icon calls DELETE /api/roadmaps/:id to remove it.
+
+PERSONALIZED DASHBOARD (Home Screen):
+  - Dashboard displays a read-only instance of the user's Interest Tree.
+  - Dashboard dynamically fetches 3 unique roadmap titles based on the 
+    user's exact tree path by calling POST /api/generate/presets.
+  - These presets are completely dynamic and personalized by AI, replacing 
+    the older static mappings.
+
+BREADCRUMB NAVIGATION:
+  - Clicking breadcrumbs slices navStack back to that level.
+  - Clicking "Dashboard" resets navStack to [] (home screen).
+
+
+========================================================
+5. BACKEND API REFERENCE
+========================================================
+
+BASE URL: http://localhost:5000
+
+AUTH ROUTES (/api/auth)
+  POST   /api/auth/register
+    Register a new user account (Requires Gemini API Key)
+    Returns: token, user { id, username, hasCompletedOnboarding, interestTree }
+
+  POST   /api/auth/login
+    Login and receive a JWT token
+    Returns: token, user { id, username, hasApiKey, hasCompletedOnboarding, interestTree }
+
+  GET    /api/auth/me              [Auth required]
+    Get current user profile
+    Returns: id, username, geminiApiKey, hasCompletedOnboarding, interestTree
+
+  PUT    /api/auth/settings        [Auth required]
+    Save Gemini API key
+    Body: { geminiApiKey }
+
+  PUT    /api/auth/onboarding      [Auth required] [UPDATED]
+    Save onboarding quiz results and mark onboarding complete
+    Body: { interestTree[] }
+    Returns: updated user object
+
+ROADMAP ROUTES (/api/roadmaps)    [All require JWT auth]
+  GET    /api/roadmaps             Get all roadmaps for logged-in user
+  POST   /api/roadmaps             Save a new roadmap document
+  PUT    /api/roadmaps/:id/complete  Toggle a node's completion status
+  DELETE /api/roadmaps/:id         Delete a roadmap by ID
+
+GENERATION ROUTES (/api/generate) [All require JWT auth]
+  POST   /api/generate             Generate a root roadmap for a topic
+  POST   /api/generate/sub         Generate a sub-roadmap for a node
+  POST   /api/generate/resources   Generate study resources for a node
+  POST   /api/generate/quiz-step   [NEW] Generate next onboarding quiz question
+  POST   /api/generate/presets     [NEW] Generate dynamic roadmap presets from interestTree
+
+HEALTH CHECK
+  GET    /health                   Returns server + database status
+
+
+========================================================
+6. DATABASE MODES
+========================================================
+
+MONGODB MODE (default):
+  - Requires MongoDB running locally or a remote URI in .env.
+  - All data persisted to disk, survives server restarts.
+  - User schema fields: username, password, geminiApiKey,
+    hasCompletedOnboarding, interestTree, timestamps.
+
+IN-MEMORY FALLBACK MODE (automatic):
+  - Activates if MongoDB connection fails (2s timeout).
+  - Stored in plain JavaScript arrays in RAM.
+  - All features work identically including onboarding flow.
+  - New user objects include all onboarding fields.
+  - Data lost on server restart.
+
+
+========================================================
+7. TECHNOLOGY STACK
+========================================================
+
+FRONTEND:
+  - React 19 (UI library)
+  - Vite 8 (build tool & dev server)
+  - React Flow (Tree and graph visualizer)
+  - Lucide React (icons)
+  - Vanilla CSS (custom design system)
+
+BACKEND:
+  - Node.js + Express.js (REST API server)
+  - Mongoose (MongoDB ODM)
+  - bcryptjs (password hashing)
+  - jsonwebtoken (JWT authentication)
+  - dotenv, cors
+
+AI:
+  - Google Gemini AI (via REST API)
+  - Model: gemini-3.5-flash
+
+
+========================================================
+8. RECENT UPDATES (CHANGELOG)
+========================================================
+
+[2026-08-12] — Dynamic AI Quiz and React Flow Integration
+  - Updated Auth flow to require a Gemini API Key on registration.
+  - Transformed OnboardingQuiz into a 10-step dynamic AI generator that creates a live React Flow visual tree (`InterestTreeVis`).
+  - Replaced static dashboard cards with dynamic AI-generated roadmap presets based on the user's unique tree path.
+  - Removed `userType` and `interests` arrays from database schema, adopting `interestTree` array paths.
+
+[2026-08-10] — Onboarding & Personalization Feature
+  - Added Cosmo Avatar guide, 3-step static quiz, and preliminary personalized dashboard presets based on static mapping.
+
+========================================================
+END OF DOCUMENTATION
+========================================================

@@ -1,0 +1,280 @@
+Phase 1: Upgrading the AI Context Engine
+We need to ensure the backend Gemini prompt explicitly uses those initial interests as the launchpad for the dynamic questions.
+
+Prompt 1:
+
+"I need to refine the AI quiz generator in server/routes/generate.js to deeply explore the user's statically chosen interests.
+
+Update the POST /api/generate/quiz-step endpoint to accept userCategory (String) and initialInterests (Array of Strings) in the request body, alongside the history array.
+
+Rewrite the Gemini system prompt to enforce this continuity. Use this logic: 'You are a career and learning profiling agent. The user is a [userCategory] who has already indicated their core interests are: [initialInterests]. Your job is to drill down into these specific areas. Based on their answer history, ask the next multiple-choice question to uncover their specific sub-niches, preferred tools, or learning styles within [initialInterests].'
+
+Ensure the AI responds with JSON containing question, options (array of 4), and a treeNodeLabel."
+
+Phase 2: Building the Handoff in the Quiz UI
+We need to structure the frontend state machine so Steps 1 & 2 collect the static data, and Step 3 triggers the AI.
+
+Prompt 2:
+
+"Refactor the state machine in src/components/OnboardingQuiz.jsx to smoothly transition from static questions to the dynamic AI loop.
+
+Step 1 (Static): Ask 'Which best describes your current stage?' with options like 'High School', 'College Student', 'Professional'. Save to userCategory state.
+
+Step 2 (Static): Ask 'Which domains are you most interested in right now?' Display a grid of selectable chips (e.g., 'Software Dev', 'Cybersecurity', 'Design', 'Data Science'). Allow the user to select 1 to 3 interests. Save to initialInterests state.
+
+Add a 'Continue' button after Step 2. When clicked, set currentStep to 3, show a loading state on the Avatar ('Cosmo is calculating your deep-dive...'), and make the first call to POST /api/generate/quiz-step, passing the userCategory, initialInterests, and an empty history array.
+
+Steps 3 through 10 should strictly be the AI-generated dynamic questions, appending their answers to history and fetching the next question."
+
+Phase 3: Constructing the Hybrid Tree Visualization
+The React Flow tree needs to visually represent this transition, starting with the static choices as the primary branches.
+
+Prompt 3:
+
+"Update the InterestTreeVis.jsx component to visually handle the transition from initial interests to dynamic AI sub-branches.
+
+The component should accept userCategory (string), initialInterests (array of strings), and aiTreePath (array of strings from the AI).
+
+The root node should be 'You (' + userCategory + ')'.
+
+The first layer of children connected to the root should be the items from the initialInterests array. If they selected multiple, branch them out side-by-side using the dagre layout.
+
+The subsequent dynamic AI nodes (from aiTreePath) should connect sequentially to the primary interest the user focuses on during the dynamic quiz, creating a beautiful cascading tree effect.
+
+Ensure the edges connecting the static interests use a solid glowing line, while edges connecting the dynamic AI choices use a dashed, animated pulse effect to differentiate the AI's deep-dive."
+
+Phase 4: Finalizing the Dual Dashboard (Curated + Dynamic)
+Now that we have both static domains and dynamic depth, we can serve both Curated (based on static) and Personalized (based on dynamic) roadmaps.
+
+Prompt 4:
+
+"Update the main dashboard logic in src/App.jsx to serve two distinct sections of content based on the hybrid onboarding data.
+
+Ensure GET /api/auth/me returns userCategory, initialInterests, and interestTree (the AI path).
+
+Section 1: 'Trending in [Initial Interest]'. Make an API call to GET /api/roadmaps/curated?interests=[initialInterests]. Render these as styled cards. (Create this endpoint in server/routes/roadmaps.js to return static mock roadmaps matching those domains).
+
+Section 2: 'AI Personalized Journeys'. Call POST /api/generate/presets passing the deeply specific interestTree array. Render the 3 highly unique AI-generated roadmap titles as cards.
+
+Add UI elements (like Lucide icons) to distinguish the 'Curated by Experts' cards from the 'AI Tailored for You' cards."
+
+NEW PHASES:
+
+Phase 1: Rebuilding the Gemini Service for Model Routing
+We will rewrite the core AI service to act as a "router" that selects the correct model based on a complexity flag.
+
+Prompt 1:
+
+"I want to implement a 'Model Routing' pattern in server/services/gemini.js to optimize API usage and avoid rate limits.
+
+In server/services/gemini.js, define a configuration mapping for models based on complexity.
+
+For complexity: 'low' (high-volume, simple tasks like quiz questions or short titles), use 'gemini-3.5-flash-lite'.
+
+For complexity: 'high' (heavy structural generation like full roadmaps), use 'gemini-3.6-flash' (or 'gemini-3.1-pro').
+
+Update the main exported function (e.g., generateAIContent) to accept a third parameter: complexity (defaulting to 'low').
+
+Inside the function, instantiate the Gemini model dynamically using the mapping: const modelName = complexity === 'high' ? 'gemini-3.6-flash' : 'gemini-3.5-flash-lite';
+
+Keep the existing multi-model fallback logic inside the try...catch block (e.g., if the high-complexity model hits a rate limit, optionally fall back to the low-complexity model before throwing an error)."
+
+Phase 2: Updating the API Endpoints to Request the Right Model
+Now we update the route handlers to specify which tier of intelligence they need.
+
+Prompt 2:
+
+"I need to update the endpoints in server/routes/generate.js to pass the correct complexity flag to the AI service.
+
+For the POST /api/generate/quiz-step endpoint (which fires 10 times per user), pass complexity: 'low' to the Gemini service. This handles rapid, simple classification tasks.
+
+For the POST /api/generate/presets endpoint (generating 3 simple titles), pass complexity: 'low'.
+
+For the POST /api/generate/resources endpoint (fetching links for a node), pass complexity: 'low'.
+
+For the POST /api/generate (root roadmap generation) and POST /api/generate/sub (deep-dive sub-roadmap) endpoints, pass complexity: 'high'. These require deep structural reasoning and hierarchical JSON outputs that need a more capable model."
+
+Phase 3: Optimizing the System Prompts for Flash-Lite
+Lighter models sometimes need more explicit instructions for JSON formatting than heavier models. We need to ensure the quiz prompt is airtight.
+
+Prompt 3:
+
+"Because POST /api/generate/quiz-step is now using the 'lite' model, I need to make its system prompt more explicit to ensure it doesn't break the JSON parsing.
+
+In server/routes/generate.js, update the prompt for the quiz generation.
+
+Add strict formatting instructions: 'You must respond ONLY with a raw JSON object. Do not include markdown formatting, markdown code blocks (like ```json), or any conversational text. The JSON keys must strictly be: "question" (string), "options" (array of exactly 4 strings), and "treeNodeLabel" (string).'
+
+Ensure the JSON parsing logic in the route uses a regex or cleanup function to strip out any accidental markdown backticks just in case the lite model includes them."
+
+
+
+new phases 2:
+Phase 1: Database & API Updates for Curated Keywords
+We need a place to store the broad keywords the user selects before they start the deep-dive AI quiz.
+
+Prompt 1:
+
+"I need to update the User schema and authentication routes to store general curated keywords alongside the dynamic AI tree.
+
+In server/models/User.js, add a new field called curatedKeywords (Array of Strings, default: []).
+
+Update PUT /api/auth/onboarding to accept curatedKeywords in the request body and save it to the user document.
+
+Update GET /api/auth/me to include curatedKeywords in the returned user payload.
+
+Ensure server/services/inMemoryDb.js also supports this new field for the fallback mode."
+
+Phase 2: The Broad Keyword Selector UI
+We will insert a new step into the onboarding quiz right after they select their category (e.g., 10th Class Student) to capture their broad interests.
+
+Prompt 2:
+
+"I need to insert a 'Broad Keyword Selection' step into src/components/OnboardingQuiz.jsx to fuel the curated dashboard content.
+
+In the OnboardingQuiz state machine, make Step 1 the userCategory selection (e.g., '10th Class Student', 'College', 'Professional').
+
+Make Step 2 a new 'Keyword Selector' UI. Cosmo (the Avatar) should say: 'What general topics or paths are you curious about?'
+
+Display a dense, toggleable grid of chips covering academic and creative areas (e.g., 'Science (PCM)', 'Commerce', 'Arts & Humanities', 'Web Development', 'Photography', 'Finance', 'Creative Writing', 'Robotics').
+
+Allow the user to select multiple keywords and save this array to a curatedKeywords state.
+
+Step 3 becomes the initialInterests selection for the AI, and Steps 4-13 run the dynamic 10-step AI quiz. Pass curatedKeywords to the final PUT /api/auth/onboarding call."
+
+Phase 3: The Curated Content Engine
+We need to build a small static database of high-quality, general roadmaps that map to those keywords.
+
+Prompt 3:
+
+"I need to create a curated content engine in the backend to serve predefined academic and creative roadmaps.
+
+In server/services/mockData.js, create a robust array called STATIC_CURATED_ROADMAPS.
+
+Add 5-6 detailed, pre-written roadmaps. Include examples specifically for a 10th-grade student (e.g., 'Science Stream (PCM) Path', 'Commerce & Finance Path') and some creative ones (e.g., 'Digital Photography 101', 'Intro to UI/UX Design'). Give each object a tags array containing relevant keywords matching the frontend chips.
+
+In server/routes/roadmaps.js, create a GET /api/roadmaps/curated endpoint. It should accept a query parameter like ?keywords=Science,Robotics.
+
+The endpoint should filter the STATIC_CURATED_ROADMAPS array, returning any roadmaps whose tags intersect with the user's requested keywords, and return them to the frontend."
+
+Phase 4: The Dual Dashboard UI
+Now we render both tracks on the home screen: the reliable curated paths and the hyper-specific AI paths.
+
+Prompt 4:
+
+"I need to update the dashboard layout in src/App.jsx to prominently display both Curated Content and AI-Personalized Content.
+
+In App.jsx, extract userCategory, curatedKeywords, and interestTree from the logged-in user state.
+
+Create a useEffect that fires on dashboard load. It should make TWO parallel API calls:
+
+Call A: GET /api/roadmaps/curated passing the user's curatedKeywords. Save to curatedPresets state.
+
+Call B: POST /api/generate/presets passing the interestTree. Save to aiPresets state.
+
+Render the dashboard in two distinct horizontal sections:
+
+Section 1: 'Trending & Essential Paths' (Render the curatedPresets as cards. Add a 'Verified' or 'Curated' badge to these cards).
+
+Section 2: 'AI Tailored Specifically For You' (Render the aiPresets as cards. Add an 'AI Generated' or 'Sparkles' badge).
+
+Ensure clicking any card from either section loads that roadmap into the main RoadmapView."
+
+
+new phases 3:
+
+To build a truly comprehensive platform, your curated content engine needs to anticipate the core, universal milestones for each life stage. When users log in, seeing a roadmap that perfectly aligns with their current life phase immediately builds trust in the app.
+
+Here is the strategy to populate your STATIC_CURATED_ROADMAPS array for every user category, complete with the exact prompts to feed into your agentic IDE.
+
+Phase 1: The College & University Master Paths
+College students are heavily focused on employability, mastering technical foundations, and exploring emerging specializations.
+
+Prompt 1:
+
+"I need to expand STATIC_CURATED_ROADMAPS in server/services/mockData.js for the 'College/University' user category. Add the following detailed roadmaps:
+
+'The Placement Playbook: DSA & Competitive Programming'
+
+Tags: ['college_student', 'placements', 'software_engineering']
+
+Phases: 1. Core Data Structures (Linked Lists, Trees, Graphs), 2. Algorithmic Paradigms (Dynamic Programming, Greedy), 3. Mock Interviews & System Design Basics.
+
+'Modern Full-Stack Web Development'
+
+Tags: ['college_student', 'web_dev', 'tech']
+
+Phases: 1. Frontend Architecture (React, Vite, CSS Grids), 2. Backend & APIs (Node.js, Express), 3. Database Management (MongoDB, SQL).
+
+'Emerging Tech: Cybersecurity & Cloud'
+
+Tags: ['college_student', 'cybersecurity', 'cloud', 'aws']
+
+Phases: 1. Network Fundamentals (Packet capture, Wireshark), 2. Cloud Infrastructure (AWS VPCs, IAM policies), 3. Defensive Security (Wazuh, SIEM setup, intrusion detection).
+
+Include rich descriptions and placeholder resource links for all nodes."
+
+Phase 2: The Working Professional Master Paths
+Professionals generally look for high-leverage skills to pivot careers, secure promotions, or manage their wealth.
+
+Prompt 2:
+
+"I need to expand STATIC_CURATED_ROADMAPS in server/services/mockData.js for the 'Working Professional' user category. Add the following detailed roadmaps:
+
+'From Contributor to Leader: Management 101'
+
+Tags: ['professional', 'leadership', 'soft_skills']
+
+Phases: 1. Effective Communication & Conflict Resolution, 2. Project Management (Agile/Scrum), 3. Strategic Decision Making & Mentorship.
+
+'Financial Independence & Wealth Building'
+
+Tags: ['professional', 'finance', 'investing']
+
+Phases: 1. Budgeting & Debt Elimination, 2. Investment Vehicles (Mutual Funds, Stocks, Real Estate), 3. Tax Optimization & Retirement Planning.
+
+'The Tech Pivot: Transitioning into IT'
+
+Tags: ['professional', 'career_change', 'tech']
+
+Phases: 1. Tech Industry Landscape, 2. Choosing a Lane (Product Management vs. Data Analysis vs. Code), 3. Building a Portfolio & Networking."
+
+Phase 3: The Explorer / Hobbyist Master Paths
+This category covers casual learners, homemakers seeking financial independence or creative outlets, and retirees looking for new passions.
+
+Prompt 3:
+
+"I need to expand STATIC_CURATED_ROADMAPS in server/services/mockData.js for the 'Hobbyist/Explorer' user category. Add the following detailed roadmaps:
+
+'Digital Freelancing & Remote Income'
+
+Tags: ['hobbyist', 'freelance', 'income']
+
+Phases: 1. Identifying Marketable Skills (Writing, Virtual Assistance, Design), 2. Setting up on Platforms (Upwork, Fiverr), 3. Client Communication & Invoicing.
+
+'The Digital Creator: Photography & Content'
+
+Tags: ['hobbyist', 'creative', 'photography']
+
+Phases: 1. Camera Basics (Exposure Triangle, Composition), 2. Post-Processing (Lightroom/Photoshop basics), 3. Building an Audience on Social Media.
+
+'Starting a Small Home Business'
+
+Tags: ['hobbyist', 'entrepreneurship', 'business']
+
+Phases: 1. Market Research & Product Validation, 2. Logistics, Sourcing, & Packaging, 3. Digital Marketing & E-commerce setup (Shopify/Instagram)."
+
+Phase 4: Dynamic Routing Logic
+Now you need to ensure the backend automatically serves these specific roadmaps based on the user's category, even if they haven't picked specific keywords yet.
+
+Prompt 4:
+
+"Update the GET /api/roadmaps/curated endpoint in server/routes/roadmaps.js to strictly enforce user category matching.
+
+The endpoint should check the requesting user's userCategory (e.g., 'college_student', 'professional', etc.).
+
+It must ALWAYS return the master roadmaps from STATIC_CURATED_ROADMAPS that contain that exact category tag, regardless of any other keywords they searched for.
+
+If the user provided additional keywords in the query string, append any other roadmaps that match those keywords to the response array.
+
+Ensure the returned array removes any duplicate roadmaps before sending the JSON response to the frontend."
