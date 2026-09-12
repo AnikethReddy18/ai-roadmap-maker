@@ -129,13 +129,15 @@ router.post('/login', async (req, res) => {
   }
 });
 
+import mongoose from 'mongoose';
+
 // GET /api/auth/me
 router.get('/me', auth, async (req, res) => {
   try {
-    if (global.useInMemoryDb) {
+    if (global.useInMemoryDb || !mongoose.Types.ObjectId.isValid(req.user.id)) {
       const user = users.find(u => u._id === req.user.id);
       if (!user) {
-        return res.status(404).json({ error: 'User not found!' });
+        return res.status(401).json({ error: 'Session expired. Please sign in again.' });
       }
       return res.json({
         id: user._id,
@@ -151,7 +153,7 @@ router.get('/me', auth, async (req, res) => {
 
     const user = await User.findById(req.user.id).select('-password');
     if (!user) {
-      return res.status(404).json({ error: 'User not found!' });
+      return res.status(401).json({ error: 'Session expired. Please sign in again.' });
     }
     res.json({
       id: user._id,
@@ -173,10 +175,10 @@ router.put('/settings', auth, async (req, res) => {
   const { geminiApiKey } = req.body;
 
   try {
-    if (global.useInMemoryDb) {
+    if (global.useInMemoryDb || !mongoose.Types.ObjectId.isValid(req.user.id)) {
       const user = users.find(u => u._id === req.user.id);
       if (!user) {
-        return res.status(404).json({ error: 'User not found!' });
+        return res.status(401).json({ error: 'User not found or session expired!' });
       }
       user.geminiApiKey = geminiApiKey || '';
       return res.json({
@@ -188,7 +190,7 @@ router.put('/settings', auth, async (req, res) => {
 
     const user = await User.findById(req.user.id);
     if (!user) {
-      return res.status(404).json({ error: 'User not found!' });
+      return res.status(401).json({ error: 'User not found or session expired!' });
     }
 
     user.geminiApiKey = geminiApiKey || '';
@@ -213,10 +215,10 @@ router.put('/onboarding', auth, async (req, res) => {
   }
 
   try {
-    if (global.useInMemoryDb) {
+    if (global.useInMemoryDb || !mongoose.Types.ObjectId.isValid(req.user.id)) {
       const user = users.find(u => u._id === req.user.id);
       if (!user) {
-        return res.status(404).json({ error: 'User not found!' });
+        return res.status(401).json({ error: 'User not found or session expired!' });
       }
       user.userCategory = userCategory || '';
       user.curatedKeywords = curatedKeywords || [];
@@ -237,7 +239,7 @@ router.put('/onboarding', auth, async (req, res) => {
 
     const user = await User.findById(req.user.id);
     if (!user) {
-      return res.status(404).json({ error: 'User not found!' });
+      return res.status(401).json({ error: 'User not found or session expired!' });
     }
 
     user.userCategory = userCategory || '';

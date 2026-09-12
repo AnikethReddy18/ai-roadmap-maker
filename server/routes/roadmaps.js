@@ -1,4 +1,5 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import Roadmap from '../models/Roadmap.js';
 import User from '../models/User.js';
 import auth from '../middleware/auth.js';
@@ -10,7 +11,7 @@ const router = express.Router();
 // GET /api/roadmaps
 router.get('/', auth, async (req, res) => {
   try {
-    if (global.useInMemoryDb) {
+    if (global.useInMemoryDb || !mongoose.Types.ObjectId.isValid(req.user.id)) {
       const userRoadmaps = roadmaps
         .filter(r => r.owner === req.user.id)
         .sort((a, b) => b.createdAt - a.createdAt);
@@ -35,7 +36,7 @@ router.get('/curated', auth, async (req, res) => {
     
     // Fetch user to get userCategory
     let userCategory = '';
-    if (global.useInMemoryDb) {
+    if (global.useInMemoryDb || !mongoose.Types.ObjectId.isValid(req.user.id)) {
       const user = users.find(u => u._id === req.user.id);
       if (user) userCategory = user.userCategory;
     } else {
@@ -89,7 +90,7 @@ router.post('/', auth, async (req, res) => {
   }
 
   try {
-    if (global.useInMemoryDb) {
+    if (global.useInMemoryDb || !mongoose.Types.ObjectId.isValid(req.user.id)) {
       const newRoadmap = {
         _id: 'rm_' + Date.now(),
         owner: req.user.id,
@@ -132,7 +133,7 @@ router.put('/:id/complete', auth, async (req, res) => {
   }
 
   try {
-    if (global.useInMemoryDb) {
+    if (global.useInMemoryDb || !mongoose.Types.ObjectId.isValid(req.params.id) || !mongoose.Types.ObjectId.isValid(req.user.id)) {
       const roadmap = roadmaps.find(r => r._id === req.params.id && r.owner === req.user.id);
       if (!roadmap) {
         return res.status(404).json({ error: 'Roadmap not found or unauthorized!' });
@@ -165,7 +166,7 @@ router.put('/:id/complete', auth, async (req, res) => {
 // DELETE /api/roadmaps/:id
 router.delete('/:id', auth, async (req, res) => {
   try {
-    if (global.useInMemoryDb) {
+    if (global.useInMemoryDb || !mongoose.Types.ObjectId.isValid(req.params.id) || !mongoose.Types.ObjectId.isValid(req.user.id)) {
       const index = roadmaps.findIndex(r => r._id === req.params.id && r.owner === req.user.id);
       if (index === -1) {
         return res.status(404).json({ error: 'Roadmap not found or unauthorized!' });

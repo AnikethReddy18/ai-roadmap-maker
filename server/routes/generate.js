@@ -17,10 +17,15 @@ import {
 
 const router = express.Router();
 
+import mongoose from 'mongoose';
+
 // Helper to fetch user based on DB mode
 async function getUser(id) {
   if (global.useInMemoryDb) {
     return users.find(u => u._id === id);
+  }
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return users.find(u => u._id === id) || null;
   }
   return await User.findById(id);
 }
