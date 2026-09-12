@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import ReactFlow, { 
   Background, 
   Controls, 
@@ -8,17 +8,19 @@ import ReactFlow, {
 import dagre from 'dagre';
 import 'reactflow/dist/style.css';
 
-const dagreGraph = new dagre.graphlib.Graph();
-dagreGraph.setDefaultEdgeLabel(() => ({}));
+const NODE_WIDTH = 180;
+const NODE_HEIGHT = 50;
 
-const nodeWidth = 200;
-const nodeHeight = 60;
-
+/**
+ * Calculates graph layout positions using a fresh Dagre instance per execution.
+ */
 const getLayoutedElements = (nodes, edges, direction = 'TB') => {
-  dagreGraph.setGraph({ rankdir: direction });
+  const dagreGraph = new dagre.graphlib.Graph();
+  dagreGraph.setDefaultEdgeLabel(() => ({}));
+  dagreGraph.setGraph({ rankdir: direction, nodesep: 45, ranksep: 60 });
 
   nodes.forEach((node) => {
-    dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });
+    dagreGraph.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
   });
 
   edges.forEach((edge) => {
@@ -27,65 +29,131 @@ const getLayoutedElements = (nodes, edges, direction = 'TB') => {
 
   dagre.layout(dagreGraph);
 
-  nodes.forEach((node) => {
+  const layoutedNodes = nodes.map((node) => {
     const nodeWithPosition = dagreGraph.node(node.id);
-    node.position = {
-      x: nodeWithPosition.x - nodeWidth / 2,
-      y: nodeWithPosition.y - nodeHeight / 2,
+    return {
+      ...node,
+      position: {
+        x: nodeWithPosition.x - NODE_WIDTH / 2,
+        y: nodeWithPosition.y - NODE_HEIGHT / 2,
+      }
     };
-    return node;
   });
 
-  return { nodes, edges };
+  return { nodes: layoutedNodes, edges };
 };
 
-export default function InterestTreeVis({ userCategory = 'User', initialInterests = [], aiTreePath = [] }) {
+export default function InterestTreeVis({ 
+  userCategory = 'User', 
+  initialInterests = [], 
+  aiTreePath = [] 
+}) {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
+  // Track layout key to only re-run auto-layout when topology actually changes
+  const prevTopologyKeyRef = useRef('');
+
   useEffect(() => {
+    const currentTopologyKey = `${userCategory}|${initialInterests.join(',')}|${aiTreePath.join(',')}`;
+    
+    // Skip re-layout if topology hasn't changed (prevents snapping back during node drag)
+    if (prevTopologyKeyRef.current === currentTopologyKey && nodes.length > 0) {
+      return;
+    }
+    prevTopologyKeyRef.current = currentTopologyKey;
+
     const initialNodes = [];
     const initialEdges = [];
 
-    // Root node
+    // 1. Root node
     initialNodes.push({
       id: 'root',
-      data: { label: `You (${userCategory})` },
+      data: { label: `👤 ${userCategory || 'Explorer'}` },
       position: { x: 0, y: 0 },
-      className: 'cosmic-node'
+      className: 'cosmic-node',
+      style: {
+        background: 'var(--note-yellow)',
+        border: '2px solid var(--color-ink)',
+        borderRadius: '12px',
+        fontWeight: 'bold',
+        padding: '8px 12px',
+        boxShadow: '3px 3px 0px var(--color-ink)'
+      }
     });
 
-    // Layer 1: Static initial interests
-    initialInterests.forEach((interest, index) => {
-      const nodeId = `initial-${index}`;
-      initialNodes.push({
-        id: nodeId,
-        data: { label: interest },
-        position: { x: 0, y: 0 },
-        className: 'cosmic-node'
-      });
+    // 2. Layer 1: Initial Interest Branches (Solid Lines)
+    const activeBranchParentIds = [];
 
+    if (initialInterests.length === 0) {
+      const fallbackId = 'initial-fallback';
+      initialNodes.push({
+        id: fallbackId,
+        data: { label: 'General Path' },
+        position: { x: 0, y: 0 },
+        style: {
+          background: 'var(--note-blue)',
+          border: '2px solid var(--color-ink)',
+          borderRadius: '10px',
+          padding: '6px 10px'
+        }
+      });
       initialEdges.push({
-        id: `edge-root-${index}`,
+        id: 'edge-root-fallback',
         source: 'root',
-        target: nodeId,
-        animated: false,
+        target: fallbackId,
         style: { stroke: 'var(--color-primary)', strokeWidth: 2 }
       });
-    });
+      activeBranchParentIds.push(fallbackId);
+    } else {
+      initialInterests.forEach((interest, index) => {
+        const nodeId = `initial-${index}`;
+        initialNodes.push({
+          id: nodeId,
+          data: { label: interest },
+          position: { x: 0, y: 0 },
+          style: {
+            background: 'var(--note-blue)',
+            border: '2px solid var(--color-ink)',
+            borderRadius: '10px',
+            fontWeight: '600',
+            padding: '6px 10px',
+            boxShadow: '2px 2px 0px var(--color-ink)'
+          }
+        });
 
-    // Layer 2+: Dynamic AI nodes
-    // The prompt says "connect sequentially to the primary interest" 
-    // We'll connect it to the first initial interest if it exists, otherwise root
-    let parentId = initialInterests.length > 0 ? 'initial-0' : 'root';
-    
+        initialEdges.push({
+          id: `edge-root-${index}`,
+          source: 'root',
+          target: nodeId,
+          style: { stroke: 'var(--color-primary)', strokeWidth: 2 }
+        });
+
+        activeBranchParentIds.push(nodeId);
+      });
+    }
+
+    // 3. Layer 2+: Dynamic AI Nodes (Round-Robin Branching across initial interests)
+    const branchPointers = [...activeBranchParentIds];
+
     aiTreePath.forEach((item, index) => {
       const nodeId = `ai-${index}`;
+      // Round-robin target branch to distribute tree growth evenly
+      const targetBranchIndex = index % branchPointers.length;
+      const parentId = branchPointers[targetBranchIndex];
+
       initialNodes.push({
         id: nodeId,
-        data: { label: item },
+        data: { label: `✨ ${item}` },
         position: { x: 0, y: 0 },
-        className: 'cosmic-node'
+        style: {
+          background: 'var(--note-purple)',
+          border: '2px solid var(--color-ink)',
+          borderRadius: '10px',
+          padding: '6px 10px',
+          fontSize: '0.9rem',
+          boxShadow: '2px 2px 0px var(--color-ink)'
+        }
       });
 
       initialEdges.push({
@@ -96,16 +164,15 @@ export default function InterestTreeVis({ userCategory = 'User', initialInterest
         style: { stroke: 'var(--color-primary)', strokeWidth: 2, strokeDasharray: '5 5' }
       });
 
-      parentId = nodeId;
+      // Update pointer for this branch to build deeper sub-branches
+      branchPointers[targetBranchIndex] = nodeId;
     });
 
-    const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
-      initialNodes,
-      initialEdges
-    );
+    // 4. Calculate layout coordinates
+    const layout = getLayoutedElements(initialNodes, initialEdges);
 
-    setNodes([...layoutedNodes]);
-    setEdges([...layoutedEdges]);
+    setNodes(layout.nodes);
+    setEdges(layout.edges);
   }, [userCategory, initialInterests, aiTreePath, setNodes, setEdges]);
 
   return (
@@ -115,7 +182,10 @@ export default function InterestTreeVis({ userCategory = 'User', initialInterest
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        nodesDraggable={true}
+        nodesConnectable={false}
         fitView
+        fitViewOptions={{ padding: 0.2 }}
         attributionPosition="bottom-right"
       >
         <Background color="var(--color-ink-muted)" gap={16} size={1} />
@@ -124,3 +194,4 @@ export default function InterestTreeVis({ userCategory = 'User', initialInterest
     </div>
   );
 }
+
