@@ -1,9 +1,9 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import auth from '../middleware/auth.js';
-import { users } from '../services/inMemoryDb.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'cosmic-sketchbook-secret-key-99';
@@ -17,16 +17,8 @@ router.post('/register', async (req, res) => {
   }
 
   try {
-    let userExists = false;
-    
-    if (global.useInMemoryDb) {
-      userExists = users.some(u => u.username === username.trim());
-    } else {
-      const existingUser = await User.findOne({ username });
-      userExists = !!existingUser;
-    }
-
-    if (userExists) {
+    const existingUser = await User.findOne({ username: username.trim() });
+    if (existingUser) {
       return res.status(400).json({ error: 'Username is already taken!' });
     }
 
@@ -34,42 +26,23 @@ router.post('/register', async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    let userId;
-    let hasApiKey = !!geminiApiKey;
+    const newUser = new User({
+      username: username.trim(),
+      password: hashedPassword,
+      geminiApiKey: geminiApiKey.trim()
+    });
 
-    if (global.useInMemoryDb) {
-      userId = 'user_' + Date.now();
-      const newUser = {
-        _id: userId,
-        username: username.trim(),
-        password: hashedPassword,
-        geminiApiKey: geminiApiKey,
-        hasCompletedOnboarding: false,
-        userCategory: '',
-        curatedKeywords: [],
-        initialInterests: [],
-        interestTree: []
-      };
-      users.push(newUser);
-    } else {
-      const newUser = new User({
-        username,
-        password: hashedPassword,
-        geminiApiKey
-      });
-      await newUser.save();
-      userId = newUser._id;
-    }
+    const savedUser = await newUser.save();
 
     // Sign JWT
-    const token = jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ id: savedUser._id }, JWT_SECRET, { expiresIn: '7d' });
 
     res.status(201).json({
       token,
       user: {
-        id: userId,
-        username: username.trim(),
-        hasApiKey,
+        id: savedUser._id,
+        username: savedUser.username,
+        hasApiKey: true,
         hasCompletedOnboarding: false,
         userCategory: '',
         curatedKeywords: [],
@@ -91,14 +64,7 @@ router.post('/login', async (req, res) => {
   }
 
   try {
-    let targetUser = null;
-
-    if (global.useInMemoryDb) {
-      targetUser = users.find(u => u.username === username.trim());
-    } else {
-      targetUser = await User.findOne({ username });
-    }
-
+    const targetUser = await User.findOne({ username: username.trim() });
     if (!targetUser) {
       return res.status(400).json({ error: 'Invalid username or password!' });
     }
@@ -129,32 +95,18 @@ router.post('/login', async (req, res) => {
   }
 });
 
-import mongoose from 'mongoose';
-
 // GET /api/auth/me
 router.get('/me', auth, async (req, res) => {
   try {
-    if (global.useInMemoryDb || !mongoose.Types.ObjectId.isValid(req.user.id)) {
-      const user = users.find(u => u._id === req.user.id);
-      if (!user) {
-        return res.status(401).json({ error: 'Session expired. Please sign in again.' });
-      }
-      return res.json({
-        id: user._id,
-        username: user.username,
-        geminiApiKey: user.geminiApiKey || '',
-        hasCompletedOnboarding: !!user.hasCompletedOnboarding,
-        userCategory: user.userCategory || '',
-        curatedKeywords: user.curatedKeywords || [],
-        initialInterests: user.initialInterests || [],
-        interestTree: user.interestTree || []
-      });
+    if (!mongoose.Types.ObjectId.isValid(req.user.id)) {
+      return res.status(401).json({ error: 'Session expired. Please sign in again.' });
     }
 
     const user = await User.findById(req.user.id).select('-password');
     if (!user) {
       return res.status(401).json({ error: 'Session expired. Please sign in again.' });
     }
+
     res.json({
       id: user._id,
       username: user.username,
@@ -175,17 +127,8 @@ router.put('/settings', auth, async (req, res) => {
   const { geminiApiKey } = req.body;
 
   try {
-    if (global.useInMemoryDb || !mongoose.Types.ObjectId.isValid(req.user.id)) {
-      const user = users.find(u => u._id === req.user.id);
-      if (!user) {
-        return res.status(401).json({ error: 'User not found or session expired!' });
-      }
-      user.geminiApiKey = geminiApiKey || '';
-      return res.json({
-        success: true,
-        message: 'Gemini API Key settings updated successfully!',
-        hasApiKey: !!user.geminiApiKey
-      });
+    if (!mongoose.Types.ObjectId.isValid(req.user.id)) {
+      return res.status(401).json({ error: 'Session expired. Please sign in again.' });
     }
 
     const user = await User.findById(req.user.id);
@@ -215,26 +158,8 @@ router.put('/onboarding', auth, async (req, res) => {
   }
 
   try {
-    if (global.useInMemoryDb || !mongoose.Types.ObjectId.isValid(req.user.id)) {
-      const user = users.find(u => u._id === req.user.id);
-      if (!user) {
-        return res.status(401).json({ error: 'User not found or session expired!' });
-      }
-      user.userCategory = userCategory || '';
-      user.curatedKeywords = curatedKeywords || [];
-      user.initialInterests = initialInterests || [];
-      user.interestTree = interestTree;
-      user.hasCompletedOnboarding = true;
-      return res.json({
-        id: user._id,
-        username: user.username,
-        geminiApiKey: user.geminiApiKey || '',
-        hasCompletedOnboarding: true,
-        userCategory: user.userCategory,
-        curatedKeywords: user.curatedKeywords,
-        initialInterests: user.initialInterests,
-        interestTree: user.interestTree
-      });
+    if (!mongoose.Types.ObjectId.isValid(req.user.id)) {
+      return res.status(401).json({ error: 'Session expired. Please sign in again.' });
     }
 
     const user = await User.findById(req.user.id);

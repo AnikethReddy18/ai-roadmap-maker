@@ -3,7 +3,6 @@ import mongoose from 'mongoose';
 import Roadmap from '../models/Roadmap.js';
 import User from '../models/User.js';
 import auth from '../middleware/auth.js';
-import { roadmaps, users } from '../services/inMemoryDb.js';
 import { STATIC_CURATED_ROADMAPS } from '../services/mockData.js';
 
 const router = express.Router();
@@ -11,11 +10,8 @@ const router = express.Router();
 // GET /api/roadmaps
 router.get('/', auth, async (req, res) => {
   try {
-    if (global.useInMemoryDb || !mongoose.Types.ObjectId.isValid(req.user.id)) {
-      const userRoadmaps = roadmaps
-        .filter(r => r.owner === req.user.id)
-        .sort((a, b) => b.createdAt - a.createdAt);
-      return res.json(userRoadmaps);
+    if (!mongoose.Types.ObjectId.isValid(req.user.id)) {
+      return res.status(401).json({ error: 'Session expired. Please sign in again.' });
     }
 
     const dbRoadmaps = await Roadmap.find({ owner: req.user.id }).sort({ createdAt: -1 });
@@ -34,22 +30,15 @@ router.get('/curated', auth, async (req, res) => {
       userKeywords = keywords.split(',').map(s => s.trim().toLowerCase());
     }
     
-    // Fetch user to get userCategory
     let userCategory = '';
-    if (global.useInMemoryDb || !mongoose.Types.ObjectId.isValid(req.user.id)) {
-      const user = users.find(u => u._id === req.user.id);
-      if (user) userCategory = user.userCategory;
-    } else {
+    if (mongoose.Types.ObjectId.isValid(req.user.id)) {
       const user = await User.findById(req.user.id);
       if (user) userCategory = user.userCategory;
     }
     
-    // Normalize category (e.g. "College Student" -> "college_student")
     const normalizedCategory = userCategory ? userCategory.toLowerCase().replace(/\s+/g, '_') : '';
-    
     let curatedList = [];
     
-    // 1. ALWAYS return master roadmaps matching the exact category tag
     if (normalizedCategory) {
       const categoryMatches = STATIC_CURATED_ROADMAPS.filter(r => 
         r.tags.some(tag => tag === normalizedCategory)
@@ -57,7 +46,6 @@ router.get('/curated', auth, async (req, res) => {
       curatedList.push(...categoryMatches);
     }
     
-    // 2. Append roadmaps that match additional keywords
     if (userKeywords.length > 0) {
       const keywordMatches = STATIC_CURATED_ROADMAPS.filter(r => 
         r.tags.some(tag => userKeywords.includes(tag.toLowerCase()))
@@ -65,12 +53,10 @@ router.get('/curated', auth, async (req, res) => {
       curatedList.push(...keywordMatches);
     }
     
-    // Remove duplicates based on title
     curatedList = curatedList.filter((roadmap, index, self) =>
       index === self.findIndex((r) => r.title === roadmap.title)
     );
     
-    // If no matches at all, return a default set
     if (curatedList.length === 0) {
       curatedList = STATIC_CURATED_ROADMAPS.slice(0, 3);
     }
@@ -90,21 +76,8 @@ router.post('/', auth, async (req, res) => {
   }
 
   try {
-    if (global.useInMemoryDb || !mongoose.Types.ObjectId.isValid(req.user.id)) {
-      const newRoadmap = {
-        _id: 'rm_' + Date.now(),
-        owner: req.user.id,
-        title,
-        description: description || '',
-        phases,
-        isSubRoadmap: !!isSubRoadmap,
-        parentNodeId: parentNodeId || '',
-        completedNodes: {},
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
-      roadmaps.push(newRoadmap);
-      return res.status(201).json(newRoadmap);
+    if (!mongoose.Types.ObjectId.isValid(req.user.id)) {
+      return res.status(401).json({ error: 'Session expired. Please sign in again.' });
     }
 
     const newRoadmap = new Roadmap({
@@ -133,17 +106,8 @@ router.put('/:id/complete', auth, async (req, res) => {
   }
 
   try {
-    if (global.useInMemoryDb || !mongoose.Types.ObjectId.isValid(req.params.id) || !mongoose.Types.ObjectId.isValid(req.user.id)) {
-      const roadmap = roadmaps.find(r => r._id === req.params.id && r.owner === req.user.id);
-      if (!roadmap) {
-        return res.status(404).json({ error: 'Roadmap not found or unauthorized!' });
-      }
-      if (!roadmap.completedNodes) {
-        roadmap.completedNodes = {};
-      }
-      roadmap.completedNodes[nodeId] = !!completed;
-      roadmap.updatedAt = new Date();
-      return res.json(roadmap);
+    if (!mongoose.Types.ObjectId.isValid(req.params.id) || !mongoose.Types.ObjectId.isValid(req.user.id)) {
+      return res.status(404).json({ error: 'Roadmap not found or invalid session!' });
     }
 
     const roadmap = await Roadmap.findOne({ _id: req.params.id, owner: req.user.id });
@@ -166,13 +130,8 @@ router.put('/:id/complete', auth, async (req, res) => {
 // DELETE /api/roadmaps/:id
 router.delete('/:id', auth, async (req, res) => {
   try {
-    if (global.useInMemoryDb || !mongoose.Types.ObjectId.isValid(req.params.id) || !mongoose.Types.ObjectId.isValid(req.user.id)) {
-      const index = roadmaps.findIndex(r => r._id === req.params.id && r.owner === req.user.id);
-      if (index === -1) {
-        return res.status(404).json({ error: 'Roadmap not found or unauthorized!' });
-      }
-      roadmaps.splice(index, 1);
-      return res.json({ success: true, message: 'Roadmap deleted successfully!' });
+    if (!mongoose.Types.ObjectId.isValid(req.params.id) || !mongoose.Types.ObjectId.isValid(req.user.id)) {
+      return res.status(404).json({ error: 'Roadmap not found or invalid session!' });
     }
 
     const result = await Roadmap.deleteOne({ _id: req.params.id, owner: req.user.id });

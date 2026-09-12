@@ -76,7 +76,7 @@ async function callGemini(prompt, apiKey, complexity = 'low') {
 }
 
 /**
- * Generates a complete learning roadmap for a given topic.
+ * Generates a complete learning roadmap for a given topic with embedded study resources per node.
  */
 export async function generateRoadmap(topic, apiKey, complexity = 'high') {
   const prompt = `
@@ -85,7 +85,7 @@ export async function generateRoadmap(topic, apiKey, complexity = 'high') {
     
     Structure the roadmap into 3 logical chronological phases (e.g. Foundations, Intermediate, Advanced).
     Each phase should contain 2-4 critical node items to learn.
-    Each node must have a unique ID, a concise title, a brief 1-2 sentence description, and an estimated time to learn.
+    Each node must have a unique ID, a concise title, a brief 1-2 sentence description, an estimated time to learn, AND a populated array "resources" containing 3-4 high-quality learning resources (official docs, videos, interactive tutorials, or articles).
     
     You MUST respond with a raw JSON object matching the following structure exactly (no markdown formatting, no comments, just valid JSON):
     {
@@ -93,15 +93,29 @@ export async function generateRoadmap(topic, apiKey, complexity = 'high') {
       "description": "A high-level description of what this roadmap covers.",
       "phases": [
         {
-          "id": "unique-phase-id (e.g., phase-1)",
+          "id": "phase-1",
           "title": "Phase Name (e.g., 1. The Foundations)",
           "description": "Short explanation of the phase's goal.",
           "nodes": [
             {
-              "id": "unique-node-id (e.g., css-basics)",
+              "id": "node-1",
               "title": "Node/Skill Title (e.g., CSS Layouts)",
               "description": "Brief description of what to learn and master.",
-              "estimatedTime": "Estimated time (e.g., 1 week, 3 days)"
+              "estimatedTime": "1 week",
+              "resources": [
+                {
+                  "title": "MDN CSS Layouts Guide",
+                  "type": "documentation",
+                  "url": "https://developer.mozilla.org/en-US/docs/Learn/CSS/CSS_layout",
+                  "platform": "MDN Web Docs"
+                },
+                {
+                  "title": "CSS Grid & Flexbox Crash Course",
+                  "type": "video",
+                  "url": "https://www.youtube.com/results?search_query=css+grid+flexbox+tutorial",
+                  "platform": "YouTube"
+                }
+              ]
             }
           ]
         }
@@ -113,31 +127,39 @@ export async function generateRoadmap(topic, apiKey, complexity = 'high') {
 }
 
 /**
- * Generates a detailed sub-roadmap for a specific sub-topic within a larger topic.
+ * Generates a detailed sub-roadmap with embedded study resources per node.
  */
 export async function generateSubRoadmap(parentTopic, subTopic, apiKey, complexity = 'high') {
   const prompt = `
     You are an expert educator. The user is learning "${parentTopic}" and wants to deep-dive into "${subTopic}".
     Create a highly detailed, specialized sub-roadmap specifically for "${subTopic}" within the context of "${parentTopic}".
     
-    Break it down into 2-3 logical chronological sub-phases.
-    Each sub-phase should contain 2-3 specific sub-topics/nodes to master.
+    Break it down into 2-3 logical chronological sub-phases with 2-3 specific sub-nodes per phase.
+    Each node MUST include a populated array "resources" containing 3-4 high-quality study resources.
     
-    You MUST respond with a raw JSON object matching the following structure exactly (no markdown, no comments, just valid JSON):
+    You MUST respond with a raw JSON object matching this structure exactly (no markdown, no comments, just valid JSON):
     {
       "title": "${subTopic} Deep Dive",
       "description": "A focused sub-roadmap dedicated to mastering ${subTopic}.",
       "phases": [
         {
-          "id": "sub-phase-id (e.g., sub-phase-1)",
+          "id": "sub-phase-1",
           "title": "Sub-Phase Title (e.g., 1. Core Mechanics)",
           "description": "Short explanation of this sub-phase's goal.",
           "nodes": [
             {
-              "id": "unique-subnode-id (e.g., react-hooks-usestate)",
+              "id": "subnode-1",
               "title": "Specific Topic Name",
               "description": "Detailed description of what to learn.",
-              "estimatedTime": "Estimated time (e.g., 1 day, 6 hours)"
+              "estimatedTime": "3 days",
+              "resources": [
+                {
+                  "title": "Official Deep Dive Guide",
+                  "type": "documentation",
+                  "url": "https://react.dev/learn",
+                  "platform": "Official Docs"
+                }
+              ]
             }
           ]
         }
@@ -149,24 +171,43 @@ export async function generateSubRoadmap(parentTopic, subTopic, apiKey, complexi
 }
 
 /**
- * Fetches high-quality links and resources for a topic.
+ * Generates a 10-question multiple-choice evaluation quiz covering all topics in a roadmap.
  */
-export async function generateResources(topic, apiKey, complexity = 'low') {
+export async function generateCourseQuiz(roadmapTitle, phases, apiKey, complexity = 'high') {
   const prompt = `
-    You are a research assistant. Provide 3-4 high-quality, real, and helpful learning resources for the topic: "${topic}".
-    These resources should ideally include official documentation, popular free courses/videos, interactive playgrounds, or highly-rated articles.
+    You are an academic assessment designer. Create a 10-question multiple-choice evaluation quiz for the completed course: "${roadmapTitle}".
+    The roadmap consists of the following phases and topics: ${JSON.stringify(phases)}.
     
-    Provide valid URLs. If you don't know the exact URL, provide a search query URL (like a YouTube or Google search) or a reliable domain (like developer.mozilla.org, react.dev, or freecodecamp.org).
+    Create exactly 10 questions testing practical understanding of these concepts.
+    Each question must have:
+    - id: unique string (e.g., "q1", "q2")
+    - targetSkill: the specific node/skill title being tested
+    - question: clear multiple-choice question
+    - options: array of exactly 4 strings
+    - correctIndex: integer 0, 1, 2, or 3 indicating the correct choice
+    - explanation: short 1-sentence explanation of the correct choice
     
-    You MUST respond with a raw JSON array matching this structure exactly (no markdown, no comments, just valid JSON):
-    [
-      {
-        "title": "Title of the resource (e.g., A Complete Guide to Flexbox or Official React Tutorial)",
-        "type": "one of: documentation | video | article | book | tutorial | interactive",
-        "url": "Valid HTTP/HTTPS URL",
-        "platform": "Name of the platform hosting the resource (e.g., YouTube, MDN, Dev.to, Coursera, FreeCodeCamp)"
-      }
-    ]
+    Respond ONLY with a raw JSON array of 10 question objects.
+  `;
+
+  return await callGemini(prompt, apiKey, complexity);
+}
+
+/**
+ * Generates a remedial roadmap specifically targeting identified weak topics, with embedded resources per node.
+ */
+export async function generateRemedialRoadmap(roadmapTitle, weakTopics, apiKey, complexity = 'high') {
+  const prompt = `
+    You are an adaptive learning coach. The user completed "${roadmapTitle}" but struggled on the evaluation quiz in these specific weak areas: ${weakTopics.join(', ')}.
+    
+    Create a highly focused, remedial review roadmap designed to fix these knowledge gaps and achieve mastery.
+    Break it down into 2 logical phases:
+    1. Rebuilding Fundamentals (focusing on core concepts of ${weakTopics.slice(0, 2).join(', ')})
+    2. Practical Application & Mastery (hands-on practice for ${weakTopics.slice(2).join(', ') || weakTopics[0]})
+    
+    Each node MUST include a populated array "resources" containing 3-4 study links specifically targeted at fixing these weak spots.
+    
+    Respond ONLY with raw JSON matching the standard roadmap format ({ "title": "...", "description": "...", "phases": [...] }).
   `;
 
   return await callGemini(prompt, apiKey, complexity);
@@ -195,10 +236,9 @@ export async function generatePresets(interestTree, apiKey, complexity = 'low') 
   const prompt = `
     You are a creative roadmap planner. The user has completed a profile quiz with the following path: ${JSON.stringify(interestTree)}.
     
-    Generate exactly 3 highly specific, creative roadmap titles based on their exact tree path (e.g., if the tree is Technical -> Software -> AI -> Generative, suggest "Building Your First LLM App").
+    Generate exactly 3 highly specific, creative roadmap titles based on their exact tree path.
     
     Return strict JSON with an array of exactly 3 strings (the roadmap titles).
-    Do NOT include markdown formatting or comments. Just valid JSON array of strings.
   `;
 
   return await callGemini(prompt, apiKey, complexity);

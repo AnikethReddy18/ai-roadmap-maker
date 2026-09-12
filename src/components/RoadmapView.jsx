@@ -1,7 +1,7 @@
 import React from 'react';
 import { Clock, CheckCircle2, Award, Circle } from 'lucide-react';
 
-export default function RoadmapView({ roadmap, completedNodes, onNodeClick }) {
+export default function RoadmapView({ roadmap, completedNodes, onNodeClick, onStartCourseQuiz }) {
   if (!roadmap) return null;
 
   const { title, description, phases = [] } = roadmap;
@@ -178,9 +178,17 @@ export default function RoadmapView({ roadmap, completedNodes, onNodeClick }) {
         >
           <Award size={48} style={{ color: 'var(--color-ink)', marginBottom: '12px' }} />
           <h3 style={{ fontSize: '1.6rem', marginBottom: '8px' }}>Path Completed!</h3>
-          <p style={{ fontSize: '1.2rem', color: 'var(--color-ink-muted)' }}>
-            Amazing! You've checked off every topic on this path. Time to sketch out a new learning adventure!
+          <p style={{ fontSize: '1.2rem', color: 'var(--color-ink-muted)', marginBottom: '20px' }}>
+            Amazing! You've checked off every topic on this path. Take the final evaluation test to measure your mastery!
           </p>
+          <button 
+            className="btn btn-primary" 
+            onClick={() => onStartCourseQuiz(roadmap)}
+            style={{ fontSize: '1.15rem', padding: '12px 24px' }}
+          >
+            <Award size={20} />
+            Take 10-Q Evaluation Quiz
+          </button>
         </div>
       )}
     </div>

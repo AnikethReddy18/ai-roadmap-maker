@@ -17,6 +17,7 @@ import SettingsModal from './components/SettingsModal';
 import AuthPortal from './components/AuthPortal';
 import OnboardingQuiz from './components/OnboardingQuiz';
 import InterestTreeVis from './components/InterestTreeVis';
+import CourseQuizModal from './components/CourseQuizModal';
 
 export default function App() {
   // --- Authentication State ---
@@ -42,8 +43,9 @@ export default function App() {
   const [loadingPresets, setLoadingPresets] = useState(false);
   const [loadingCurated, setLoadingCurated] = useState(false);
   
-  // Resource Cache: { [nodeId]: resourcesArray }
-  const [resourcesCache, setResourcesCache] = useState({});
+  // Evaluation Quiz State
+  const [activeQuizData, setActiveQuizData] = useState(null);
+  const [activeQuizRoadmap, setActiveQuizRoadmap] = useState(null);
 
   // Bootstrap Auth Session
   useEffect(() => {
@@ -422,33 +424,72 @@ export default function App() {
     }
   };
 
-  const handleFetchResources = async (node) => {
-    if (resourcesCache[node.id]) return;
-    
+  const handleStartCourseQuiz = async (roadmap) => {
+    setIsLoading(true);
+    setLoadingText(`Building 10-Question Evaluation Test for "${roadmap.title}"...`);
     try {
-      const response = await fetch('/api/generate/resources', {
+      const response = await fetch('/api/generate/course-quiz', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ topic: node.title, nodeId: node.id })
+        body: JSON.stringify({ roadmapId: roadmap._id })
       });
-      const resources = await response.json();
-      
-      if (!response.ok) throw new Error(resources.error || 'Failed to fetch guides');
-      
-      setResourcesCache(prev => ({
-        ...prev,
-        [node.id]: resources
-      }));
+      const quizData = await response.json();
+      if (!response.ok) throw new Error(quizData.error || 'Failed to load evaluation quiz');
+
+      setActiveQuizData(quizData);
+      setActiveQuizRoadmap(roadmap);
     } catch (err) {
       console.error(err);
-      triggerToast('Failed to load study links.', 'error');
-      setResourcesCache(prev => ({
-        ...prev,
-        [node.id]: []
-      }));
+      triggerToast(err.message, 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSubmitCourseQuiz = async (quizId, userAnswers) => {
+    const response = await fetch('/api/generate/evaluate-quiz', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ quizId, userAnswers })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Failed to evaluate quiz');
+    return result;
+  };
+
+  const handleRedesignCourse = async (roadmapTitle, weakTopics) => {
+    setIsLoading(true);
+    setLoadingText(`Synthesizing Remedial Roadmap for weak areas (${weakTopics.join(', ')})...`);
+    try {
+      const response = await fetch('/api/generate/redesign-course', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ roadmapTitle, weakTopics })
+      });
+      const savedRemedial = await response.json();
+      if (!response.ok) throw new Error(savedRemedial.error || 'Failed to create remedial course');
+
+      setHistory(prev => [savedRemedial, ...prev]);
+      setNavStack([{
+        id: savedRemedial._id,
+        title: savedRemedial.title,
+        data: savedRemedial
+      }]);
+      triggerToast(`Remedial Roadmap for "${roadmapTitle}" created!`);
+    } catch (err) {
+      console.error(err);
+      triggerToast(err.message, 'error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -663,8 +704,8 @@ export default function App() {
             completedNodes={completedNodes}
             onNodeClick={(node) => {
               setSelectedNode(node);
-              handleFetchResources(node);
             }}
+            onStartCourseQuiz={handleStartCourseQuiz}
           />
         ) : (
           <div className="welcome-container" style={{ display: 'flex', gap: '40px', textAlign: 'left', maxWidth: '1100px' }}>
@@ -771,11 +812,24 @@ export default function App() {
         <NodeDrawer 
           node={selectedNode}
           completed={selectedNode ? !!completedNodes[selectedNode.id] : false}
-          resources={selectedNode ? resourcesCache[selectedNode.id] : []}
+          resources={selectedNode && selectedNode.resources ? selectedNode.resources : []}
           onClose={() => setSelectedNode(null)}
           onGenerateSubRoadmap={handleGenerateSubRoadmap}
           onToggleCompleted={handleToggleNodeCompleted}
         />
+
+        {activeQuizData && (
+          <CourseQuizModal 
+            quizData={activeQuizData}
+            roadmapTitle={activeQuizRoadmap ? activeQuizRoadmap.title : 'Roadmap'}
+            onClose={() => {
+              setActiveQuizData(null);
+              setActiveQuizRoadmap(null);
+            }}
+            onSubmitQuiz={handleSubmitCourseQuiz}
+            onRedesignCourse={handleRedesignCourse}
+          />
+        )}
 
         <SettingsModal 
           isOpen={isSettingsOpen}

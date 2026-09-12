@@ -14,29 +14,22 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/ai-roadmap-generator';
 
-// Global flag to track database fallback status
-global.useInMemoryDb = false;
-
 // Configure Middlewares
 app.use(cors());
 app.use(express.json());
 
-// Connect to MongoDB
+// Connect to MongoDB Atlas
 mongoose.connect(MONGODB_URI, {
-  serverSelectionTimeoutMS: 10000 // 10s timeout for cloud Atlas DNS & SSL connection
+  serverSelectionTimeoutMS: 10000
 })
   .then(() => {
     console.log('✅ Connected to MongoDB Atlas database successfully!');
   })
   .catch((err) => {
-    global.useInMemoryDb = true;
-    console.log('\n========================================================================');
-    console.log('[WARNING] MongoDB connection failed:', err.message);
-    console.log('👉 FALLING BACK TO IN-MEMORY DATABASE MODE.');
-    console.log('========================================================================\n');
+    console.error('[ERROR] MongoDB connection failed:', err.message);
   });
 
-// Register Api Routes
+// Register API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/roadmaps', roadmapRoutes);
 app.use('/api/generate', generateRoutes);
@@ -45,7 +38,7 @@ app.use('/api/generate', generateRoutes);
 app.get('/health', (req, res) => {
   res.status(200).json({ 
     status: 'ok', 
-    database: global.useInMemoryDb ? 'in-memory-fallback' : (mongoose.connection.readyState === 1 ? 'connected' : 'disconnected') 
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected' 
   });
 });
 

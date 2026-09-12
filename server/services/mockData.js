@@ -195,98 +195,161 @@ export const mockResources = {
   ]
 };
 
+function populateRoadmapNodeResources(roadmap) {
+  if (!roadmap || !roadmap.phases) return roadmap;
+  roadmap.phases.forEach(phase => {
+    if (phase.nodes) {
+      phase.nodes.forEach(node => {
+        if (!node.resources || node.resources.length === 0) {
+          const cleanTitle = encodeURIComponent(node.title);
+          node.resources = [
+            {
+              title: `Official ${node.title} Documentation`,
+              type: "documentation",
+              url: `https://www.google.com/search?q=${cleanTitle}+official+documentation`,
+              platform: "Official Docs"
+            },
+            {
+              title: `${node.title} Complete Video Tutorial`,
+              type: "video",
+              url: `https://www.youtube.com/results?search_query=${cleanTitle}+tutorial`,
+              platform: "YouTube"
+            },
+            {
+              title: `Interactive ${node.title} Playground`,
+              type: "interactive",
+              url: `https://freecodecamp.org`,
+              platform: "FreeCodeCamp"
+            }
+          ];
+        }
+      });
+    }
+  });
+  return roadmap;
+}
+
 export function generateFallbackMockRoadmap(topic) {
-  const cleanTopic = topic.trim().toLowerCase();
-  
+  const cleanTopic = topic.toLowerCase().trim();
+  let baseRoadmap;
+
   if (mockRoadmaps[cleanTopic]) {
-    return JSON.parse(JSON.stringify(mockRoadmaps[cleanTopic]));
+    baseRoadmap = JSON.parse(JSON.stringify(mockRoadmaps[cleanTopic]));
+  } else {
+    const capitalizedTopic = topic.charAt(0).toUpperCase() + topic.slice(1);
+    baseRoadmap = {
+      title: capitalizedTopic,
+      description: `A generated learning path to help you master ${capitalizedTopic} from scratch.`,
+      phases: [
+        {
+          id: "phase-1",
+          title: "1. Foundational Core",
+          description: `Get started with the introductory concepts of ${capitalizedTopic}.`,
+          nodes: [
+            {
+              id: `mock-${cleanTopic}-intro`,
+              title: `Introduction to ${capitalizedTopic}`,
+              description: `Understand the fundamental concepts, history, and core objectives of ${capitalizedTopic}.`,
+              estimatedTime: "3-5 days"
+            },
+            {
+              id: `mock-${cleanTopic}-tools`,
+              title: "Required Tools & Environments",
+              description: "Install, configure, and get familiar with the essential tooling and development environments.",
+              estimatedTime: "2 days"
+            }
+          ]
+        },
+        {
+          id: "phase-2",
+          title: "2. Intermediate Concepts",
+          description: "Expand your knowledge into structural and advanced methodologies.",
+          nodes: [
+            {
+              id: `mock-${cleanTopic}-core-methods`,
+              title: "Core Methodologies",
+              description: "Learn the primary syntax, frameworks, or process structures that power this field.",
+              estimatedTime: "1-2 weeks"
+            }
+          ]
+        },
+        {
+          id: "phase-3",
+          title: "3. Project & Mastery",
+          description: "Apply your skills by building production-grade solutions.",
+          nodes: [
+            {
+              id: `mock-${cleanTopic}-project`,
+              title: "Hands-on Capstone Project",
+              description: `Combine all learning concepts to build a comprehensive ${capitalizedTopic} project.`,
+              estimatedTime: "2 weeks"
+            }
+          ]
+        }
+      ]
+    };
   }
-  
-  const capitalizedTopic = topic.charAt(0).toUpperCase() + topic.slice(1);
-  return {
-    title: capitalizedTopic,
-    description: `A generated learning path to help you master ${capitalizedTopic} from scratch.`,
-    phases: [
-      {
-        id: "phase-1",
-        title: "1. Foundational Core",
-        description: `Get started with the introductory concepts of ${capitalizedTopic}.`,
-        nodes: [
-          {
-            id: `mock-${cleanTopic}-intro`,
-            title: `Introduction to ${capitalizedTopic}`,
-            description: `Understand the fundamental concepts, history, and core objectives of ${capitalizedTopic}.`,
-            estimatedTime: "3-5 days"
-          },
-          {
-            id: `mock-${cleanTopic}-tools`,
-            title: "Required Tools & Environments",
-            description: "Install, configure, and get familiar with the essential tooling and development environments.",
-            estimatedTime: "2 days"
-          }
-        ]
-      },
-      {
-        id: "phase-2",
-        title: "2. Intermediate Concepts",
-        description: "Expand your knowledge into structural and advanced methodologies.",
-        nodes: [
-          {
-            id: `mock-${cleanTopic}-core-methods`,
-            title: "Core Methodologies",
-            description: "Learn the primary syntax, frameworks, or process structures that power this field.",
-            estimatedTime: "1-2 weeks"
-          }
-        ]
-      },
-      {
-        id: "phase-3",
-        title: "3. Project & Mastery",
-        description: "Apply your skills by building production-grade solutions.",
-        nodes: [
-          {
-            id: `mock-${cleanTopic}-project`,
-            title: "Hands-on Capstone Project",
-            description: `Combine all learning concepts to build a comprehensive ${capitalizedTopic} project.`,
-            estimatedTime: "2 weeks"
-          }
-        ]
-      }
-    ]
-  };
+
+  return populateRoadmapNodeResources(baseRoadmap);
 }
 
 export function generateFallbackMockSubRoadmap(nodeId, nodeTitle) {
   const cleanId = nodeId.toLowerCase();
+  let baseSub;
+
   if (mockSubRoadmaps[cleanId]) {
-    return JSON.parse(JSON.stringify(mockSubRoadmaps[cleanId]));
+    baseSub = JSON.parse(JSON.stringify(mockSubRoadmaps[cleanId]));
+  } else {
+    baseSub = {
+      title: `${nodeTitle} Deep Dive`,
+      description: `A detailed sub-roadmap specifically created to explore the details of ${nodeTitle}.`,
+      phases: [
+        {
+          id: `${nodeId}-sub-1`,
+          title: "Phase 1: Deep Theory",
+          description: "Core internals and conceptual guidelines.",
+          nodes: [
+            {
+              id: `${nodeId}-sub-theory-1`,
+              title: `${nodeTitle} Concepts`,
+              description: `In-depth exploration of core theories behind ${nodeTitle}.`,
+              estimatedTime: "2 days"
+            },
+            {
+              id: `${nodeId}-sub-theory-2`,
+              title: "Advanced Internals",
+              description: "Understand behind-the-scenes processes and system interactions.",
+              estimatedTime: "3 days"
+            }
+          ]
+        }
+      ]
+    };
   }
+
+  return populateRoadmapNodeResources(baseSub);
+}
+
+export function generateFallbackMockCourseQuiz(roadmapTitle, phases = []) {
+  const allNodes = phases.flatMap(p => p.nodes || []);
+  const sampleSkills = allNodes.map(n => n.title).concat(["General Best Practices", "Performance Optimization", "Architecture"]);
   
-  return {
-    title: `${nodeTitle} Deep Dive`,
-    description: `A detailed sub-roadmap specifically created to explore the details of ${nodeTitle}.`,
-    phases: [
-      {
-        id: `${nodeId}-sub-1`,
-        title: "Phase 1: Deep Theory",
-        description: "Core internals and conceptual guidelines.",
-        nodes: [
-          {
-            id: `${nodeId}-sub-theory-1`,
-            title: `${nodeTitle} Concepts`,
-            description: `In-depth exploration of core theories behind ${nodeTitle}.`,
-            estimatedTime: "2 days"
-          },
-          {
-            id: `${nodeId}-sub-theory-2`,
-            title: "Advanced Internals",
-            description: "Understand behind-the-scenes processes and system interactions.",
-            estimatedTime: "3 days"
-          }
-        ]
-      }
-    ]
-  };
+  return Array.from({ length: 10 }, (_, i) => {
+    const skill = sampleSkills[i % sampleSkills.length] || "Core Concept";
+    return {
+      id: `q${i + 1}`,
+      targetSkill: skill,
+      question: `Question ${i + 1}: What is the primary purpose of ${skill}?`,
+      options: [
+        `Option A: To optimize performance and streamline execution in ${skill}`,
+        `Option B: To handle basic layout rendering without state updates`,
+        `Option C: To enforce strict type definitions and linting rules`,
+        `Option D: To manage external network connections`
+      ],
+      correctIndex: 0,
+      explanation: `Option A is correct because ${skill} focuses on optimizing performance and execution.`
+    };
+  });
 }
 
 export function generateFallbackMockResources(nodeId, nodeTitle) {

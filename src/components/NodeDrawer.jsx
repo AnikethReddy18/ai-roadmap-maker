@@ -23,6 +23,9 @@ export default function NodeDrawer({
   onToggleCompleted 
 }) {
   const isOpen = !!node;
+  const displayResources = (node && node.resources && node.resources.length > 0) 
+    ? node.resources 
+    : (resources || []);
 
   // Map resource types to Lucide icons
   const getResourceIcon = (type = '') => {
@@ -114,18 +117,13 @@ export default function NodeDrawer({
                   Study Guides & Links
                 </h4>
 
-                {resources === undefined ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 0', color: 'var(--color-ink-muted)' }}>
-                    <div className="spinner" style={{ width: '20px', height: '20px', borderWidth: '2px' }}></div>
-                    <span style={{ fontSize: '1.1rem' }}>Flipping pages for links...</span>
-                  </div>
-                ) : resources.length === 0 ? (
+                {displayResources.length === 0 ? (
                   <p style={{ fontSize: '1.1rem', color: 'var(--color-ink-muted)' }}>
                     No resource cards found. Try looking up tutorials on the web.
                   </p>
                 ) : (
                   <div className="resource-list">
-                    {resources.map((res, idx) => (
+                    {displayResources.map((res, idx) => (
                       <a 
                         key={idx} 
                         href={res.url} 
