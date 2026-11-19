@@ -1,16 +1,37 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
-// Adjust default host for Android Emulator vs Localhost
-const DEFAULT_HOST = Platform.OS === 'android' ? 'http://10.0.2.2:5000' : 'http://localhost:5000';
-export const API_BASE_URL = DEFAULT_HOST;
+const PRODUCTION_API_URL = 'https://ai-roadmap-maker-4blt.onrender.com';
+
+const getHost = () => {
+  // 1. Explicitly configured via .env
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL.replace(/\/+$/, '');
+  }
+
+  // 2. Automatically infer laptop/workstation LAN IP from Expo Metro bundler
+  const hostUri = Constants.expoConfig?.hostUri || Constants.manifest?.debuggerHost || Constants.experienceUrl;
+  if (hostUri) {
+    const rawHost = hostUri.replace(/^[a-zA-Z]+:\/\//, '');
+    const ip = rawHost.split(':')[0];
+    if (ip && ip !== 'localhost' && ip !== '127.0.0.1') {
+      return `http://${ip}:5000`;
+    }
+  }
+
+  // 3. Fallback to live permanent Render backend
+  return PRODUCTION_API_URL;
+};
+
+export const API_BASE_URL = getHost();
 
 const TOKEN_STORAGE_KEY = 'auth_token';
 
 export async function getAuthToken() {
   try {
     return await AsyncStorage.getItem(TOKEN_STORAGE_KEY);
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -27,6 +48,14 @@ export async function setAuthToken(token) {
   }
 }
 
+export async function removeAuthToken() {
+  try {
+    await AsyncStorage.removeItem(TOKEN_STORAGE_KEY);
+  } catch (e) {
+    console.error('AsyncStorage remove error:', e);
+  }
+}
+
 export async function apiFetch(endpoint, options = {}) {
   const token = await getAuthToken();
   const headers = {
@@ -38,15 +67,24 @@ export async function apiFetch(endpoint, options = {}) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers
-  });
+  const url = `${API_BASE_URL}${endpoint}`;
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers
+    });
 
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error || 'Network request failed');
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Server error');
+    }
+
+    return data;
+  } catch (err) {
+    console.error(`[API Connection Failure] Endpoint: ${url}`, err);
+    if (err.message && !err.message.includes('Network request failed') && !err.message.includes('NetworkError') && !err.message.includes('Failed to fetch')) {
+      throw err;
+    }
+    throw new Error(`Cannot reach backend at ${API_BASE_URL}.\nMake sure your server is running on port 5000 and your phone/emulator can reach it.`);
   }
-
-  return data;
 }

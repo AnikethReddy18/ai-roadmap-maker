@@ -1,23 +1,31 @@
-import React, { useState } from 'react';
-import { 
-  Modal, 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  ScrollView, 
-  ActivityIndicator, 
-  StyleSheet 
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Modal,
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+  StyleSheet,
+  Pressable,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+import { apiFetch } from '../config/api';
+import SketchBadge from './SketchBadge';
 
-export default function EvaluationQuizModal({ 
-  quizData, 
-  roadmapTitle, 
-  onClose, 
-  onSubmitQuiz, 
-  onRedesignCourse 
+export default function EvaluationQuizModal({
+  quizData: initialQuizData,
+  roadmapId,
+  roadmapTitle,
+  visible,
+  onClose,
+  onSubmitQuiz,
+  onRedesignCourse,
+  navigation,
 }) {
+  const [quizData, setQuizData] = useState(initialQuizData);
+  const [loadingQuiz, setLoadingQuiz] = useState(!initialQuizData);
   const [currentQIndex, setCurrentQIndex] = useState(0);
   const [userAnswers, setUserAnswers] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -25,28 +33,52 @@ export default function EvaluationQuizModal({
   const [isRedesigning, setIsRedesigning] = useState(false);
   const [error, setError] = useState('');
 
-  if (!quizData || !quizData.questions) return null;
+  const fetchQuiz = useCallback(async () => {
+    setLoadingQuiz(true);
+    setError('');
+    try {
+      const data = await apiFetch('/generate/course-quiz', {
+        method: 'POST',
+        body: JSON.stringify({ roadmapId }),
+      });
+      setQuizData(data);
+    } catch (err) {
+      setError(err.message || 'Failed to load evaluation quiz');
+    } finally {
+      setLoadingQuiz(false);
+    }
+  }, [roadmapId]);
 
-  const questions = quizData.questions;
+  useEffect(() => {
+    if (!initialQuizData && roadmapId && visible) {
+      fetchQuiz();
+    } else if (initialQuizData) {
+      setQuizData(initialQuizData);
+      setLoadingQuiz(false);
+    }
+  }, [roadmapId, initialQuizData, visible, fetchQuiz]);
+
+  const questions = quizData?.questions || [];
   const currentQuestion = questions[currentQIndex];
   const totalQuestions = questions.length;
 
   const handleSelectOption = (optIdx) => {
-    setUserAnswers(prev => ({
+    if (!currentQuestion) return;
+    setUserAnswers((prev) => ({
       ...prev,
-      [currentQuestion.id]: optIdx
+      [currentQuestion.id]: optIdx,
     }));
   };
 
   const handleNext = () => {
     if (currentQIndex < totalQuestions - 1) {
-      setCurrentQIndex(prev => prev + 1);
+      setCurrentQIndex((prev) => prev + 1);
     }
   };
 
   const handlePrev = () => {
     if (currentQIndex > 0) {
-      setCurrentQIndex(prev => prev - 1);
+      setCurrentQIndex((prev) => prev - 1);
     }
   };
 
@@ -54,7 +86,15 @@ export default function EvaluationQuizModal({
     setIsSubmitting(true);
     setError('');
     try {
-      const evaluationResult = await onSubmitQuiz(quizData.quizId, userAnswers);
+      let evaluationResult;
+      if (typeof onSubmitQuiz === 'function') {
+        evaluationResult = await onSubmitQuiz(quizData.quizId, userAnswers);
+      } else {
+        evaluationResult = await apiFetch('/generate/evaluate-quiz', {
+          method: 'POST',
+          body: JSON.stringify({ quizId: quizData.quizId, userAnswers }),
+        });
+      }
       setResults(evaluationResult);
     } catch (err) {
       setError(err.message || 'Failed to submit quiz.');
@@ -68,8 +108,19 @@ export default function EvaluationQuizModal({
     setIsRedesigning(true);
     setError('');
     try {
-      await onRedesignCourse(roadmapTitle, results.weakTopics);
-      onClose();
+      let remedialData;
+      if (typeof onRedesignCourse === 'function') {
+        remedialData = await onRedesignCourse(roadmapTitle, results.weakTopics);
+      } else {
+        remedialData = await apiFetch('/generate/redesign-course', {
+          method: 'POST',
+          body: JSON.stringify({ roadmapTitle, weakTopics: results.weakTopics }),
+        });
+      }
+      onClose?.();
+      if (remedialData && navigation) {
+        navigation.push('RoadmapView', { roadmap: remedialData });
+      }
     } catch (err) {
       setError(err.message || 'Failed to redesign course.');
       setIsRedesigning(false);
@@ -78,143 +129,258 @@ export default function EvaluationQuizModal({
 
   const answeredCount = Object.keys(userAnswers).length;
 
+  if (!visible) return null;
+
   return (
     <Modal
-      visible={!!quizData}
-      animationType="slide"
+      visible={visible}
+      animationType="fade"
       transparent={true}
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
-        <View style={styles.modalContainer}>
-          
+        <Pressable style={styles.backdrop} onPress={onClose} />
+
+        <View style={styles.modalCard}>
+          {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.headerTitle} numberOfLines={1}>
-              {results ? 'Quiz Evaluation' : `Test: ${roadmapTitle}`}
-            </Text>
-            <TouchableOpacity onPress={onClose}>
-              <Ionicons name="close" size={24} color={colors.ink} />
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={styles.headerSubtitle}>
+                {results ? 'MASTERY REPORT' : '10-QUESTION TEST'}
+              </Text>
+              <Text style={styles.headerTitle} numberOfLines={1}>
+                {results ? 'Evaluation Assessment' : roadmapTitle}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+              <MaterialCommunityIcons name="close" size={20} color={colors.ink} />
             </TouchableOpacity>
           </View>
 
-          {error ? (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{error}</Text>
+          {loadingQuiz ? (
+            <View style={styles.loadingBox}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={styles.loadingText}>Synthesizing customized evaluation questions...</Text>
             </View>
-          ) : null}
-
-          {/* QUIZ TAKING VIEW */}
-          {!results ? (
+          ) : error ? (
+            <View style={styles.errorBox}>
+              <MaterialCommunityIcons name="alert-circle-outline" size={24} color={colors.error} />
+              <Text style={styles.errorText}>{error}</Text>
+              <TouchableOpacity style={styles.retryBtn} onPress={fetchQuiz}>
+                <Text style={styles.retryBtnText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : !results && currentQuestion ? (
+            /* Quiz Active View */
             <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
-              {/* Progress bar */}
-              <View style={styles.progressTrack}>
-                <View style={[styles.progressBar, { width: `${((currentQIndex + 1) / totalQuestions) * 100}%` }]} />
+              {/* Progress Tracker */}
+              <View style={styles.progressContainer}>
+                <View style={styles.progressHeaderRow}>
+                  <Text style={styles.progressLabel}>
+                    Question {currentQIndex + 1} of {totalQuestions}
+                  </Text>
+                  <Text style={styles.progressPercentText}>
+                    {Math.round(((currentQIndex + 1) / totalQuestions) * 100)}%
+                  </Text>
+                </View>
+                <View style={styles.progressBarTrack}>
+                  <View
+                    style={[
+                      styles.progressBarFill,
+                      { width: `${((currentQIndex + 1) / totalQuestions) * 100}%` },
+                    ]}
+                  />
+                </View>
               </View>
 
-              <Text style={styles.questionCounter}>Question {currentQIndex + 1} of {totalQuestions}</Text>
+              {/* Target Skill Badge */}
+              {currentQuestion.targetSkill && (
+                <SketchBadge
+                  label={`Target Skill: ${currentQuestion.targetSkill}`}
+                  bgColor={colors.noteYellow}
+                  textColor={colors.yellowBadgeText}
+                  icon={
+                    <MaterialCommunityIcons
+                      name="bullseye-arrow"
+                      size={14}
+                      color={colors.yellowBadgeText}
+                    />
+                  }
+                  style={{ marginBottom: 12 }}
+                />
+              )}
 
+              {/* Question Card */}
               <View style={styles.questionCard}>
-                <Text style={styles.targetSkill}>Skill: {currentQuestion.targetSkill || 'Core Topic'}</Text>
                 <Text style={styles.questionText}>{currentQuestion.question}</Text>
               </View>
 
-              {/* Options */}
+              {/* Options List */}
               <View style={styles.optionsList}>
                 {currentQuestion.options.map((opt, optIdx) => {
                   const isSelected = userAnswers[currentQuestion.id] === optIdx;
                   return (
                     <TouchableOpacity
                       key={optIdx}
+                      activeOpacity={0.8}
                       style={[
                         styles.optionBtn,
-                        isSelected && styles.optionBtnSelected
+                        isSelected && styles.optionBtnSelected,
                       ]}
                       onPress={() => handleSelectOption(optIdx)}
                     >
-                      <View style={[styles.optionBadge, isSelected && styles.optionBadgeSelected]}>
-                        <Text style={[styles.optionBadgeText, isSelected && { color: '#fff' }]}>
+                      <View
+                        style={[
+                          styles.optionBadge,
+                          isSelected && styles.optionBadgeSelected,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.optionBadgeText,
+                            isSelected && { color: colors.white },
+                          ]}
+                        >
                           {String.fromCharCode(65 + optIdx)}
                         </Text>
                       </View>
-                      <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>{opt}</Text>
+                      <Text
+                        style={[
+                          styles.optionText,
+                          isSelected && styles.optionTextSelected,
+                        ]}
+                      >
+                        {opt}
+                      </Text>
                     </TouchableOpacity>
                   );
                 })}
               </View>
 
-              {/* Navigation controls */}
+              {/* Nav Controls */}
               <View style={styles.navControls}>
                 <TouchableOpacity
                   style={[styles.navBtn, currentQIndex === 0 && styles.disabledBtn]}
                   onPress={handlePrev}
                   disabled={currentQIndex === 0}
                 >
+                  <MaterialCommunityIcons name="arrow-left" size={16} color={colors.ink} />
                   <Text style={styles.navBtnText}>Previous</Text>
                 </TouchableOpacity>
 
                 {currentQIndex < totalQuestions - 1 ? (
-                  <TouchableOpacity style={[styles.navBtn, styles.primaryNavBtn]} onPress={handleNext}>
-                    <Text style={styles.primaryNavBtnText}>Next</Text>
+                  <TouchableOpacity
+                    style={[styles.navBtn, styles.primaryNavBtn]}
+                    onPress={handleNext}
+                  >
+                    <Text style={styles.primaryNavBtnText}>Next Question</Text>
+                    <MaterialCommunityIcons name="arrow-right" size={16} color={colors.white} />
                   </TouchableOpacity>
                 ) : (
                   <TouchableOpacity
-                    style={[styles.navBtn, styles.submitBtn, (isSubmitting || answeredCount < totalQuestions) && styles.disabledBtn]}
+                    style={[
+                      styles.navBtn,
+                      styles.submitBtn,
+                      (isSubmitting || answeredCount < totalQuestions) && styles.disabledBtn,
+                    ]}
                     onPress={handleSubmit}
                     disabled={isSubmitting || answeredCount < totalQuestions}
                   >
                     {isSubmitting ? (
                       <ActivityIndicator color={colors.ink} size="small" />
                     ) : (
-                      <Text style={styles.submitBtnText}>Submit ({answeredCount}/{totalQuestions})</Text>
+                      <>
+                        <MaterialCommunityIcons name="check-all" size={18} color={colors.ink} />
+                        <Text style={styles.submitBtnText}>
+                          Submit Test ({answeredCount}/{totalQuestions})
+                        </Text>
+                      </>
                     )}
                   </TouchableOpacity>
                 )}
               </View>
             </ScrollView>
-          ) : (
-            /* RESULTS VIEW */
+          ) : results ? (
+            /* Results View */
             <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
-              <View style={[styles.resultsCard, { backgroundColor: results.percentage >= 70 ? colors.noteGreen : colors.noteRose }]}>
-                <Ionicons name="trophy" size={40} color={colors.ink} />
+              <View
+                style={[
+                  styles.resultsCard,
+                  {
+                    backgroundColor:
+                      results.percentage >= 70 ? colors.noteGreen : colors.noteRose,
+                  },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name={results.percentage >= 70 ? 'trophy-award' : 'clipboard-alert-outline'}
+                  size={48}
+                  color={colors.ink}
+                />
                 <Text style={styles.scorePercentage}>{results.percentage}%</Text>
-                <Text style={styles.scoreDetail}>You answered {results.score} of {results.total} questions correctly!</Text>
+                <Text style={styles.scoreDetail}>
+                  You answered {results.score} of {results.total} questions correctly!
+                </Text>
+                <Text style={styles.scoreVerdict}>
+                  {results.percentage >= 70
+                    ? '🎉 Mastered! You demonstrated strong retention.'
+                    : '📖 Keep going! A little targeted revision will get you there.'}
+                </Text>
               </View>
 
               {results.weakTopics && results.weakTopics.length > 0 ? (
                 <View style={styles.weakBox}>
-                  <Text style={styles.weakTitle}>⚠️ Identifed Weak Skills:</Text>
+                  <View style={styles.weakHeaderRow}>
+                    <MaterialCommunityIcons name="target" size={18} color={colors.amberBadgeText} />
+                    <Text style={styles.weakTitle}>Identified Focus Areas</Text>
+                  </View>
+                  <Text style={styles.weakSubText}>
+                    Cosmo detected opportunities to strengthen these specific topics:
+                  </Text>
                   {results.weakTopics.map((topic, i) => (
-                    <Text key={i} style={styles.weakItem}>• {topic}</Text>
+                    <View key={i} style={styles.weakItemRow}>
+                      <Text style={styles.weakBullet}>•</Text>
+                      <Text style={styles.weakItemText}>{topic}</Text>
+                    </View>
                   ))}
                 </View>
               ) : (
                 <View style={styles.perfectBox}>
-                  <Text style={styles.perfectText}>🎉 Mastered! 100% correct answers!</Text>
+                  <Text style={styles.perfectText}>🌟 Outstanding! Perfect retention score!</Text>
                 </View>
               )}
 
               <View style={styles.resultsActions}>
-                <TouchableOpacity style={styles.closeModalBtn} onPress={onClose}>
-                  <Text style={styles.closeModalBtnText}>Close</Text>
-                </TouchableOpacity>
-
-                {results.weakTopics && results.weakTopics.length > 0 ? (
+                {results.weakTopics && results.weakTopics.length > 0 && (
                   <TouchableOpacity
+                    activeOpacity={0.8}
                     style={styles.redesignBtn}
                     onPress={handleTriggerRedesign}
                     disabled={isRedesigning}
                   >
                     {isRedesigning ? (
-                      <ActivityIndicator color="#fff" size="small" />
+                      <ActivityIndicator color={colors.white} size="small" />
                     ) : (
-                      <Text style={styles.redesignBtnText}>✨ Redesign Remedial Roadmap</Text>
+                      <>
+                        <MaterialCommunityIcons name="auto-fix" size={20} color={colors.white} />
+                        <Text style={styles.redesignBtnText}>
+                          Build Remedial Roadmap
+                        </Text>
+                      </>
                     )}
                   </TouchableOpacity>
-                ) : null}
+                )}
+
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  style={styles.closeModalBtn}
+                  onPress={onClose}
+                >
+                  <Text style={styles.closeModalBtnText}>Done</Text>
+                </TouchableOpacity>
               </View>
             </ScrollView>
-          )}
-
+          ) : null}
         </View>
       </View>
     </Modal>
@@ -224,249 +390,378 @@ export default function EvaluationQuizModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(30, 41, 59, 0.6)',
     justifyContent: 'center',
-    padding: 16
+    alignItems: 'center',
+    padding: 16,
   },
-  modalContainer: {
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  modalCard: {
+    width: '100%',
+    maxHeight: '90%',
     backgroundColor: colors.bgPaper,
-    borderRadius: 16,
+    borderRadius: 20,
     borderWidth: 2,
     borderColor: colors.ink,
-    maxHeight: '90%',
-    padding: 20,
+    padding: 18,
     shadowColor: colors.ink,
     shadowOffset: { width: 4, height: 4 },
     shadowOpacity: 1,
     shadowRadius: 0,
-    elevation: 5
+    elevation: 8,
   },
   header: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12
+    paddingBottom: 12,
+    borderBottomWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: colors.sketchTrack,
+    marginBottom: 14,
+  },
+  headerSubtitle: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: colors.inkMuted,
+    letterSpacing: 1,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 17,
+    fontWeight: '900',
     color: colors.ink,
-    flex: 1
+    marginTop: 2,
   },
-  body: {
-    marginTop: 4
-  },
-  progressTrack: {
-    height: 6,
-    backgroundColor: '#e5e7eb',
-    borderRadius: 3,
-    overflow: 'hidden',
-    marginBottom: 8
-  },
-  progressBar: {
-    height: '100%',
-    backgroundColor: colors.primary
-  },
-  questionCounter: {
-    fontSize: 12,
-    color: colors.inkMuted,
-    marginBottom: 12
-  },
-  questionCard: {
-    backgroundColor: colors.noteYellow,
+  closeBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: colors.bgCard,
     borderWidth: 2,
     borderColor: colors.ink,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 16
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  targetSkill: {
-    fontSize: 11,
-    fontWeight: 'bold',
+  loadingBox: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 14,
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.ink,
+    textAlign: 'center',
+  },
+  errorBox: {
+    backgroundColor: colors.noteRose,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.error,
+    textAlign: 'center',
+    marginVertical: 8,
+  },
+  retryBtn: {
+    backgroundColor: colors.white,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 4,
+  },
+  retryBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.ink,
+  },
+  body: {
+    flexGrow: 0,
+  },
+  progressContainer: {
+    marginBottom: 14,
+  },
+  progressHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  progressLabel: {
+    fontSize: 12,
+    fontWeight: '800',
     color: colors.inkMuted,
-    textTransform: 'uppercase',
-    marginBottom: 4
+  },
+  progressPercentText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: colors.primary,
+  },
+  progressBarTrack: {
+    height: 8,
+    backgroundColor: colors.sketchTrack,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: colors.primary,
+  },
+  questionCard: {
+    backgroundColor: colors.bgCard,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    shadowColor: colors.ink,
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 2,
   },
   questionText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.ink
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.ink,
+    lineHeight: 20,
   },
   optionsList: {
     gap: 10,
-    marginBottom: 20
+    marginBottom: 18,
   },
   optionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.white,
-    borderWidth: 1.5,
+    backgroundColor: colors.bgCard,
+    borderWidth: 2,
     borderColor: colors.ink,
-    borderRadius: 10,
-    padding: 12
+    borderRadius: 12,
+    padding: 12,
+    shadowColor: colors.ink,
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 2,
   },
   optionBtnSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.ink
+    backgroundColor: colors.noteYellow,
+    borderColor: colors.ink,
+    transform: [{ translateX: 1 }, { translateY: 1 }],
   },
   optionBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#e5e7eb',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    backgroundColor: colors.bgPaper,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10
+    marginRight: 10,
   },
   optionBadgeSelected: {
-    backgroundColor: colors.ink
+    backgroundColor: colors.primary,
   },
   optionBadgeText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: colors.ink
+    fontSize: 13,
+    fontWeight: '900',
+    color: colors.ink,
   },
   optionText: {
+    flex: 1,
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '700',
     color: colors.ink,
-    flex: 1
   },
   optionTextSelected: {
-    color: '#fff',
-    fontWeight: 'bold'
+    fontWeight: '900',
   },
   navControls: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8
+    gap: 10,
+    paddingVertical: 10,
   },
   navBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: colors.ink,
-    backgroundColor: colors.white
-  },
-  primaryNavBtn: {
-    backgroundColor: colors.primary
-  },
-  submitBtn: {
-    backgroundColor: colors.noteGreen
-  },
-  disabledBtn: {
-    opacity: 0.5
-  },
-  navBtnText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: colors.ink
-  },
-  primaryNavBtnText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#fff'
-  },
-  submitBtnText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: colors.ink
-  },
-  errorBox: {
-    backgroundColor: colors.noteRose,
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: colors.ink
-  },
-  errorText: {
-    color: colors.error,
-    fontWeight: 'bold',
-    fontSize: 13
-  },
-  resultsCard: {
+    flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
-    borderRadius: 12,
+    justifyContent: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderRadius: 10,
     borderWidth: 2,
     borderColor: colors.ink,
-    marginBottom: 16
+    backgroundColor: colors.bgCard,
+    gap: 6,
+    shadowColor: colors.ink,
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 2,
+  },
+  navBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.ink,
+  },
+  primaryNavBtn: {
+    backgroundColor: colors.primary,
+    flex: 1,
+  },
+  primaryNavBtnText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: colors.white,
+  },
+  submitBtn: {
+    backgroundColor: colors.noteGreen,
+    flex: 1,
+  },
+  submitBtnText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: colors.ink,
+  },
+  disabledBtn: {
+    opacity: 0.45,
+  },
+  resultsCard: {
+    borderWidth: 2,
+    borderColor: colors.ink,
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    marginBottom: 16,
+    shadowColor: colors.ink,
+    shadowOffset: { width: 3, height: 3 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 3,
   },
   scorePercentage: {
-    fontSize: 32,
-    fontWeight: 'bold',
+    fontSize: 36,
+    fontWeight: '900',
     color: colors.ink,
-    marginTop: 6
+    marginTop: 8,
   },
   scoreDetail: {
     fontSize: 14,
+    fontWeight: '800',
     color: colors.ink,
-    marginTop: 4
+    marginTop: 4,
+  },
+  scoreVerdict: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.inkMuted,
+    textAlign: 'center',
+    marginTop: 6,
   },
   weakBox: {
     backgroundColor: colors.noteOrange,
     borderWidth: 2,
     borderColor: colors.ink,
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 14,
-    marginBottom: 16
+    marginBottom: 16,
+  },
+  weakHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
   },
   weakTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: colors.ink,
-    marginBottom: 8
-  },
-  weakItem: {
     fontSize: 13,
+    fontWeight: '900',
+    color: colors.amberBadgeText,
+  },
+  weakSubText: {
+    fontSize: 11,
     color: colors.ink,
-    marginBottom: 4
+    marginBottom: 8,
+    fontWeight: '600',
+  },
+  weakItemRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+  },
+  weakBullet: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: colors.amberBadgeText,
+    marginRight: 6,
+  },
+  weakItemText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.ink,
   },
   perfectBox: {
     backgroundColor: colors.noteGreen,
-    padding: 14,
-    borderRadius: 12,
     borderWidth: 2,
     borderColor: colors.ink,
-    marginBottom: 16
+    borderRadius: 14,
+    padding: 14,
+    alignItems: 'center',
+    marginBottom: 16,
   },
   perfectText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: colors.ink,
-    textAlign: 'center'
+    fontSize: 13,
+    fontWeight: '900',
+    color: colors.mintBadgeText,
   },
   resultsActions: {
-    flexDirection: 'row',
     gap: 10,
-    justifyContent: 'flex-end'
-  },
-  closeModalBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: colors.ink,
-    backgroundColor: colors.white
-  },
-  closeModalBtnText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: colors.ink
+    marginTop: 8,
+    marginBottom: 10,
   },
   redesignBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    borderWidth: 1.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    borderWidth: 2,
     borderColor: colors.ink,
-    backgroundColor: colors.primary
+    borderRadius: 12,
+    paddingVertical: 14,
+    gap: 8,
+    shadowColor: colors.ink,
+    shadowOffset: { width: 3, height: 3 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 3,
   },
   redesignBtnText: {
     fontSize: 14,
-    fontWeight: 'bold',
-    color: '#fff'
-  }
+    fontWeight: '900',
+    color: colors.white,
+  },
+  closeModalBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bgCard,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  closeModalBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.ink,
+  },
 });

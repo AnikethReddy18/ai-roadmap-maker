@@ -18,10 +18,17 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#fcfbf7"
-      }
+      },
+      "package": "com.aniketh1811.airoadmapmobile",
+      "usesCleartextTraffic": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "08cfd340-c358-480c-b6bc-89001c0e5a34"
+      }
     }
   }
 }

@@ -45,8 +45,8 @@ export default function App() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor={colors.bgCanvas} />
-        <ActivityIndicator size="large" color={colors.brandDark} />
+        <StatusBar barStyle="dark-content" backgroundColor={colors.bgPaper} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -57,15 +57,40 @@ export default function App() {
         initialRouteName={initialRoute}
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: colors.bgCanvas },
+          contentStyle: { backgroundColor: colors.bgPaper },
+          animation: 'slide_from_right',
         }}
       >
         <Stack.Screen name="Auth">
-          {(props) => <AuthScreen {...props} user={user} setUser={setUser} />}
+          {(props) => (
+            <AuthScreen
+              {...props}
+              user={user}
+              setUser={setUser}
+              onAuthSuccess={(token, userData) => {
+                setUser(userData);
+                if (userData && userData.onboardingCompleted) {
+                  props.navigation.replace('Home');
+                } else {
+                  props.navigation.replace('Onboarding');
+                }
+              }}
+            />
+          )}
         </Stack.Screen>
 
         <Stack.Screen name="Onboarding">
-          {(props) => <OnboardingQuizScreen {...props} user={user} setUser={setUser} />}
+          {(props) => (
+            <OnboardingQuizScreen
+              {...props}
+              user={user}
+              setUser={setUser}
+              onOnboardingComplete={(updatedUser) => {
+                setUser(updatedUser);
+                props.navigation.replace('Home');
+              }}
+            />
+          )}
         </Stack.Screen>
 
         <Stack.Screen name="Home">
@@ -81,7 +106,7 @@ export default function App() {
 const styles = StyleSheet.create({
   loadingContainer: {
     flex: 1,
-    backgroundColor: colors.bgCanvas,
+    backgroundColor: colors.bgPaper,
     justifyContent: 'center',
     alignItems: 'center',
   },

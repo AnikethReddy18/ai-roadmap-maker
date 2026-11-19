@@ -1,31 +1,95 @@
 import React from 'react';
-import { 
-  Modal, 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  ScrollView, 
-  Linking, 
-  StyleSheet 
-} from 'reactnative';
-import { Ionicons } from '@expo/vector-icons';
+import {
+  Modal,
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  Linking,
+  ActivityIndicator,
+  StyleSheet,
+  Pressable,
+} from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+import SketchBadge from './SketchBadge';
 
-export default function NodeDetailSheet({ 
-  node, 
-  completed, 
-  onClose, 
-  onToggleCompleted, 
-  onGenerateSubRoadmap 
+export default function NodeDetailSheet({
+  node,
+  completed,
+  onClose,
+  onToggleCompleted,
+  onToggleComplete,
+  onGenerateSubRoadmap,
+  onGenerateSub,
+  loadingSub = false,
 }) {
   if (!node) return null;
+
+  const handleToggle = () => {
+    const fn = onToggleCompleted || onToggleComplete;
+    if (typeof fn === 'function') {
+      fn(node.id || node._id, completed);
+    }
+  };
+
+  const handleGenerateSub = () => {
+    const fn = onGenerateSubRoadmap || onGenerateSub;
+    if (typeof fn === 'function') {
+      fn(node);
+    }
+  };
 
   const displayResources = node.resources || [];
 
   const handleOpenLink = (url) => {
     if (url) {
-      Linking.openURL(url).catch(err => console.error("Couldn't load page", err));
+      Linking.openURL(url).catch((err) =>
+        console.error("Couldn't open URL:", err)
+      );
     }
+  };
+
+  const getResourceMeta = (type = '', platform = '') => {
+    const t = (type + ' ' + platform).toLowerCase();
+    if (t.includes('video') || t.includes('youtube')) {
+      return {
+        icon: 'play-circle-outline',
+        color: colors.error,
+        bg: colors.noteRose,
+        label: 'Video',
+      };
+    }
+    if (t.includes('doc') || t.includes('official') || t.includes('mdn') || t.includes('api')) {
+      return {
+        icon: 'file-document-outline',
+        color: colors.primary,
+        bg: colors.noteBlue,
+        label: 'Docs',
+      };
+    }
+    if (t.includes('tutorial') || t.includes('course') || t.includes('guide')) {
+      return {
+        icon: 'school-outline',
+        color: colors.success,
+        bg: colors.noteGreen,
+        label: 'Tutorial',
+      };
+    }
+    if (t.includes('interactive') || t.includes('playground') || t.includes('github') || t.includes('code')) {
+      return {
+        icon: 'code-tags',
+        color: colors.accentPurple,
+        bg: colors.notePurple,
+        label: 'Interactive',
+      };
+    }
+    return {
+      icon: 'bookmark-outline',
+      color: colors.warning,
+      bg: colors.noteYellow,
+      label: 'Article',
+    };
   };
 
   return (
@@ -36,90 +100,165 @@ export default function NodeDetailSheet({
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
+        {/* Backdrop tap closes */}
+        <Pressable style={styles.backdropPressable} onPress={onClose} />
+
         <View style={styles.sheetContainer}>
-          
+          {/* Top grab bar */}
+          <View style={styles.grabBarWrap}>
+            <View style={styles.grabBar} />
+          </View>
+
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title}>{node.title}</Text>
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={styles.sheetBadgeLabel}>TOPIC STUDY SHEET</Text>
+              <Text style={styles.title}>{node.title}</Text>
+            </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Ionicons name="close" size={24} color={colors.ink} />
+              <MaterialCommunityIcons name="close" size={20} color={colors.ink} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            style={styles.content}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scrollContent}
+          >
+            {/* Description */}
             <Text style={styles.description}>{node.description}</Text>
 
             {/* Meta Row */}
             <View style={styles.metaRow}>
-              <View style={styles.metaBadge}>
-                <Ionicons name="time-outline" size={16} color={colors.primary} />
-                <Text style={styles.metaText}>{node.estimatedTime || 'N/A'}</Text>
-              </View>
+              <SketchBadge
+                label={node.estimatedTime || node.estimatedHours ? `${node.estimatedTime || node.estimatedHours + ' hrs'}` : '1-2 hrs'}
+                bgColor={colors.noteBlue}
+                textColor={colors.primaryDark}
+                icon={
+                  <MaterialCommunityIcons
+                    name="clock-outline"
+                    size={14}
+                    color={colors.primaryDark}
+                  />
+                }
+              />
 
-              <View style={styles.metaBadge}>
-                <Ionicons 
-                  name={completed ? "checkmark-circle" : "ellipse-outline"} 
-                  size={16} 
-                  color={completed ? colors.success : colors.inkMuted} 
-                />
-                <Text style={[styles.metaText, { color: completed ? colors.success : colors.inkMuted }]}>
-                  {completed ? 'Completed' : 'Not Started'}
-                </Text>
-              </View>
+              <SketchBadge
+                label={completed ? 'Completed ✨' : 'In Progress'}
+                bgColor={completed ? colors.noteGreen : colors.noteYellow}
+                textColor={completed ? colors.mintBadgeText : colors.yellowBadgeText}
+                icon={
+                  <MaterialCommunityIcons
+                    name={completed ? 'check-circle' : 'circle-outline'}
+                    size={14}
+                    color={completed ? colors.mintBadgeText : colors.yellowBadgeText}
+                  />
+                }
+              />
             </View>
 
             {/* Action Buttons */}
-            <View style={styles.actionsGroup}>
-              <TouchableOpacity 
+            <View style={styles.actionsRow}>
+              <TouchableOpacity
+                activeOpacity={0.8}
                 style={[
-                  styles.actionBtn, 
-                  { backgroundColor: completed ? colors.noteRose : colors.noteGreen }
+                  styles.actionButton,
+                  {
+                    backgroundColor: completed ? colors.noteRose : colors.noteGreen,
+                  },
                 ]}
-                onPress={() => onToggleCompleted(node.id)}
+                onPress={handleToggle}
               >
-                <Ionicons 
-                  name={completed ? "close-circle-outline" : "checkmark-circle-outline"} 
-                  size={18} 
-                  color={colors.ink} 
+                <MaterialCommunityIcons
+                  name={completed ? 'undo-variant' : 'check-bold'}
+                  size={18}
+                  color={colors.ink}
                 />
-                <Text style={styles.actionBtnText}>
+                <Text style={styles.actionButtonText}>
                   {completed ? 'Mark Incomplete' : 'Mark Completed'}
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity 
-                style={[styles.actionBtn, { backgroundColor: colors.primary }]}
-                onPress={() => onGenerateSubRoadmap(node)}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={[styles.actionButton, styles.subRoadmapBtn]}
+                onPress={handleGenerateSub}
+                disabled={loadingSub}
               >
-                <Ionicons name="sparkles-outline" size={18} color="#fff" />
-                <Text style={[styles.actionBtnText, { color: '#fff' }]}>Sub-Roadmap</Text>
+                {loadingSub ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : (
+                  <>
+                    <MaterialCommunityIcons
+                      name="auto-fix"
+                      size={18}
+                      color={colors.white}
+                    />
+                    <Text style={[styles.actionButtonText, { color: colors.white }]}>
+                      Sub-Roadmap
+                    </Text>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
 
-            {/* Embedded Study Resources */}
+            {/* Embedded Study Resources Section */}
             <View style={styles.resourcesSection}>
-              <Text style={styles.sectionTitle}>📚 Study Guides & Links</Text>
+              <View style={styles.resourcesHeaderRow}>
+                <MaterialCommunityIcons
+                  name="book-open-page-variant-outline"
+                  size={20}
+                  color={colors.ink}
+                />
+                <Text style={styles.sectionTitle}>Curated Study Materials</Text>
+              </View>
 
               {displayResources.length === 0 ? (
-                <Text style={styles.emptyText}>No resource cards available for this topic.</Text>
+                <View style={styles.emptyResourceBox}>
+                  <Text style={styles.emptyText}>
+                    No embedded links available for this step yet.
+                  </Text>
+                </View>
               ) : (
-                displayResources.map((res, idx) => (
-                  <TouchableOpacity
-                    key={idx}
-                    style={styles.resourceCard}
-                    onPress={() => handleOpenLink(res.url)}
-                  >
-                    <View style={styles.resourceInfo}>
-                      <Text style={styles.resourceTitle} numberOfLines={1}>{res.title}</Text>
-                      <Text style={styles.resourceMeta}>{res.platform || 'Doc'} • {res.type}</Text>
-                    </View>
-                    <Ionicons name="open-outline" size={16} color={colors.inkMuted} />
-                  </TouchableOpacity>
-                ))
+                displayResources.map((res, idx) => {
+                  const meta = getResourceMeta(res.type, res.platform);
+                  return (
+                    <TouchableOpacity
+                      key={idx}
+                      activeOpacity={0.75}
+                      style={styles.resourceCard}
+                      onPress={() => handleOpenLink(res.url)}
+                    >
+                      <View style={[styles.resourceIconWrap, { backgroundColor: meta.bg }]}>
+                        <MaterialCommunityIcons
+                          name={meta.icon}
+                          size={20}
+                          color={meta.color}
+                        />
+                      </View>
+
+                      <View style={styles.resourceInfo}>
+                        <Text style={styles.resourceTitle} numberOfLines={2}>
+                          {res.title || 'Official Learning Reference'}
+                        </Text>
+                        <Text style={styles.resourcePlatform}>
+                          {res.platform || meta.label} • {res.type || 'Guide'}
+                        </Text>
+                      </View>
+
+                      <View style={styles.openIconWrap}>
+                        <MaterialCommunityIcons
+                          name="open-in-new"
+                          size={18}
+                          color={colors.primary}
+                        />
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
               )}
             </View>
           </ScrollView>
-
         </View>
       </View>
     </Modal>
@@ -129,125 +268,193 @@ export default function NodeDetailSheet({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end'
+    backgroundColor: 'rgba(30, 41, 59, 0.55)',
+    justifyContent: 'flex-end',
+  },
+  backdropPressable: {
+    flex: 1,
   },
   sheetContainer: {
     backgroundColor: colors.bgPaper,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     borderWidth: 2,
+    borderBottomWidth: 0,
     borderColor: colors.ink,
     maxHeight: '85%',
-    padding: 20
+    paddingHorizontal: 20,
+    paddingBottom: 30,
+    shadowColor: colors.ink,
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 8,
+  },
+  grabBarWrap: {
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  grabBar: {
+    width: 44,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: colors.inkMuted,
+    opacity: 0.5,
   },
   header: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14
+    paddingBottom: 12,
+    borderBottomWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: colors.sketchTrack,
+    marginBottom: 12,
+  },
+  sheetBadgeLabel: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: colors.inkMuted,
+    letterSpacing: 1,
+    marginBottom: 2,
   },
   title: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 19,
+    fontWeight: '900',
     color: colors.ink,
-    flex: 1
+    lineHeight: 24,
   },
   closeBtn: {
-    padding: 4
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: colors.bgCard,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.ink,
+    shadowOffset: { width: 2, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 2,
   },
   content: {
-    marginBottom: 10
+    flexGrow: 0,
+  },
+  scrollContent: {
+    paddingBottom: 20,
   },
   description: {
-    fontSize: 15,
+    fontSize: 14,
     color: colors.ink,
     lineHeight: 22,
-    marginBottom: 16
+    fontWeight: '500',
+    marginBottom: 14,
   },
   metaRow: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16
+    gap: 8,
+    marginBottom: 18,
   },
-  metaBadge: {
+  actionsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.white,
-    borderWidth: 1.5,
-    borderColor: colors.ink,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6
+    gap: 10,
+    marginBottom: 22,
   },
-  metaText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.ink
-  },
-  actionsGroup: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 24
-  },
-  actionBtn: {
+  actionButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 10,
+    paddingVertical: 13,
+    paddingHorizontal: 12,
+    borderRadius: 12,
     borderWidth: 2,
     borderColor: colors.ink,
+    gap: 6,
     shadowColor: colors.ink,
     shadowOffset: { width: 2, height: 2 },
-    shadowOpacity: 0.9,
+    shadowOpacity: 1,
     shadowRadius: 0,
-    elevation: 2
+    elevation: 3,
   },
-  actionBtnText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: colors.ink
+  subRoadmapBtn: {
+    backgroundColor: colors.primary,
+  },
+  actionButtonText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: colors.ink,
   },
   resourcesSection: {
-    marginTop: 8
+    backgroundColor: colors.bgCard,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    padding: 16,
+    shadowColor: colors.ink,
+    shadowOffset: { width: 3, height: 3 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    elevation: 3,
+  },
+  resourcesHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 14,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 15,
+    fontWeight: '900',
     color: colors.ink,
-    marginBottom: 12
+  },
+  emptyResourceBox: {
+    paddingVertical: 16,
+    alignItems: 'center',
   },
   emptyText: {
-    fontSize: 14,
+    fontSize: 12,
     color: colors.inkMuted,
-    fontStyle: 'italic'
+    fontStyle: 'italic',
   },
   resourceCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.white,
+    backgroundColor: colors.bgPaper,
     borderWidth: 1.5,
     borderColor: colors.ink,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 10
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 10,
+  },
+  resourceIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
   },
   resourceInfo: {
     flex: 1,
-    marginRight: 8
   },
   resourceTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
+    fontSize: 13,
+    fontWeight: '800',
     color: colors.ink,
-    marginBottom: 2
+    marginBottom: 2,
   },
-  resourceMeta: {
-    fontSize: 12,
-    color: colors.inkMuted
-  }
+  resourcePlatform: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.inkMuted,
+  },
+  openIconWrap: {
+    marginLeft: 8,
+    padding: 4,
+  },
 });
