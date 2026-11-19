@@ -25,7 +25,7 @@ export default function App() {
     try {
       const token = await getAuthToken();
       if (token) {
-        const userData = await apiFetch('/auth/me');
+        const userData = await apiFetch('/api/auth/me');
         if (userData && userData.user) {
           setUser(userData.user);
           if (userData.user.onboardingCompleted) {

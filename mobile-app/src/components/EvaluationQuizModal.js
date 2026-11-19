@@ -37,7 +37,7 @@ export default function EvaluationQuizModal({
     setLoadingQuiz(true);
     setError('');
     try {
-      const data = await apiFetch('/generate/course-quiz', {
+      const data = await apiFetch('/api/generate/course-quiz', {
         method: 'POST',
         body: JSON.stringify({ roadmapId }),
       });
@@ -90,7 +90,7 @@ export default function EvaluationQuizModal({
       if (typeof onSubmitQuiz === 'function') {
         evaluationResult = await onSubmitQuiz(quizData.quizId, userAnswers);
       } else {
-        evaluationResult = await apiFetch('/generate/evaluate-quiz', {
+        evaluationResult = await apiFetch('/api/generate/evaluate-quiz', {
           method: 'POST',
           body: JSON.stringify({ quizId: quizData.quizId, userAnswers }),
         });
@@ -112,14 +112,25 @@ export default function EvaluationQuizModal({
       if (typeof onRedesignCourse === 'function') {
         remedialData = await onRedesignCourse(roadmapTitle, results.weakTopics);
       } else {
-        remedialData = await apiFetch('/generate/redesign-course', {
+        remedialData = await apiFetch('/api/generate/redesign-course', {
           method: 'POST',
           body: JSON.stringify({ roadmapTitle, weakTopics: results.weakTopics }),
         });
       }
       onClose?.();
       if (remedialData && navigation) {
-        navigation.push('RoadmapView', { roadmap: remedialData });
+        const flatNodes =
+          Array.isArray(remedialData.nodes) && remedialData.nodes.length > 0
+            ? remedialData.nodes
+            : remedialData.phases
+            ? remedialData.phases.flatMap((p) => p.nodes || [])
+            : [];
+        navigation.push('RoadmapView', {
+          roadmap: {
+            ...remedialData,
+            nodes: flatNodes,
+          },
+        });
       }
     } catch (err) {
       setError(err.message || 'Failed to redesign course.');

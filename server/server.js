@@ -34,6 +34,11 @@ app.use('/api/auth', authRoutes);
 app.use('/api/roadmaps', roadmapRoutes);
 app.use('/api/generate', generateRoutes);
 
+// Fallback aliases for clients calling without /api prefix
+app.use('/auth', authRoutes);
+app.use('/roadmaps', roadmapRoutes);
+app.use('/generate', generateRoutes);
+
 // General Health Check
 app.get('/health', (req, res) => {
   res.status(200).json({ 

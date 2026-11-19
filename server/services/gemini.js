@@ -59,9 +59,35 @@ async function callGemini(prompt, apiKey, complexity = 'low') {
 
       const data = await response.json();
       try {
-        let textResponse = data.candidates[0].content.parts[0].text;
-        textResponse = textResponse.replace(/^```json/mi, '').replace(/```$/m, '').trim();
-        return JSON.parse(textResponse);
+        let textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        
+        // 1. Try direct trim
+        let cleaned = textResponse.trim();
+        // 2. Strip standard markdown code blocks
+        cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+
+        try {
+          return JSON.parse(cleaned);
+        } catch {
+          // 3. Fallback: locate JSON object/array boundaries
+          const firstBrace = cleaned.indexOf('{');
+          const firstBracket = cleaned.indexOf('[');
+          let startIdx = -1;
+          let endIdx = -1;
+
+          if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+            startIdx = firstBrace;
+            endIdx = cleaned.lastIndexOf('}');
+          } else if (firstBracket !== -1) {
+            startIdx = firstBracket;
+            endIdx = cleaned.lastIndexOf(']');
+          }
+
+          if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+            return JSON.parse(cleaned.slice(startIdx, endIdx + 1));
+          }
+          throw new Error("No JSON boundaries found");
+        }
       } catch (err) {
         console.error("Failed to parse Gemini response text as JSON:", err, data);
         throw new Error("Failed to parse AI response. Please try again.");

@@ -138,9 +138,9 @@ export default function OnboardingQuizScreen({
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.bgPaper} />
-      <NotebookBackground showMargin={true}>
+    <NotebookBackground showMargin={true}>
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.bgPaper} />
         {/* Top Progress Tracker */}
         <View style={styles.topProgressArea}>
           <View style={styles.topProgressHeader}>
@@ -351,15 +351,15 @@ export default function OnboardingQuizScreen({
             </View>
           )}
         </ScrollView>
-      </NotebookBackground>
-    </SafeAreaView>
+      </SafeAreaView>
+    </NotebookBackground>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.bgPaper,
+    backgroundColor: 'transparent',
   },
   topProgressArea: {
     paddingHorizontal: 16,
@@ -399,6 +399,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 16,
     paddingBottom: 40,
+    flexGrow: 1,
   },
   errorBox: {
     flexDirection: 'row',

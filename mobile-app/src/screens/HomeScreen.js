@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -12,6 +12,7 @@ import {
   SafeAreaView,
   StatusBar,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { apiFetch, removeAuthToken } from '../config/api';
@@ -88,16 +89,19 @@ export default function HomeScreen({ navigation, user, setUser }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [deletingId, setDeletingId] = useState(null);
 
-  useEffect(() => {
-    fetchSavedRoadmaps();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      fetchSavedRoadmaps();
+    }, [])
+  );
 
   const fetchSavedRoadmaps = async () => {
     setLoading(true);
     try {
-      const data = await apiFetch('/roadmaps');
+      const data = await apiFetch('/api/roadmaps');
       if (Array.isArray(data)) {
-        setRoadmaps(data);
+        // Exclude nested subroadmaps from root dashboard view (just like web app)
+        setRoadmaps(data.filter((r) => !r.isSubRoadmap));
       }
     } catch (error) {
       console.log('Failed to fetch roadmaps:', error);
@@ -143,9 +147,10 @@ export default function HomeScreen({ navigation, user, setUser }) {
     const completedMap = rm.completedNodes || {};
 
     nodes.forEach((n) => {
+      const nId = n.id || n._id;
       const isDone =
         n.completed ||
-        (completedMap instanceof Map ? completedMap.get(n.id) : completedMap[n.id]);
+        (completedMap instanceof Map ? completedMap.get(nId) : completedMap[nId]);
       if (isDone) completedCount += 1;
     });
 
@@ -164,7 +169,7 @@ export default function HomeScreen({ navigation, user, setUser }) {
           onPress: async () => {
             setDeletingId(roadmapItem._id);
             try {
-              await apiFetch(`/roadmaps/${roadmapItem._id}`, {
+              await apiFetch(`/api/roadmaps/${roadmapItem._id}`, {
                 method: 'DELETE',
               });
               setRoadmaps((prev) => prev.filter((r) => r._id !== roadmapItem._id));
@@ -188,7 +193,7 @@ export default function HomeScreen({ navigation, user, setUser }) {
 
     setGenerating(true);
     try {
-      const roadmapData = await apiFetch('/generate', {
+      const roadmapData = await apiFetch('/api/generate', {
         method: 'POST',
         body: JSON.stringify({ topic: query }),
       });
@@ -208,7 +213,7 @@ export default function HomeScreen({ navigation, user, setUser }) {
         let roadmapToView = normalizedRoadmap;
 
         try {
-          const saved = await apiFetch('/roadmaps', {
+          const saved = await apiFetch('/api/roadmaps', {
             method: 'POST',
             body: JSON.stringify({
               title: roadmapData.title || query,
@@ -248,9 +253,9 @@ export default function HomeScreen({ navigation, user, setUser }) {
   }, [roadmaps, searchQuery]);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.bgPaper} />
-      <NotebookBackground showMargin={true}>
+    <NotebookBackground showMargin={true}>
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.bgPaper} />
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
@@ -586,19 +591,20 @@ export default function HomeScreen({ navigation, user, setUser }) {
             })
           )}
         </ScrollView>
-      </NotebookBackground>
-    </SafeAreaView>
+      </SafeAreaView>
+    </NotebookBackground>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.bgPaper,
+    backgroundColor: 'transparent',
   },
   scrollContent: {
     padding: 16,
     paddingBottom: 40,
+    flexGrow: 1,
   },
   header: {
     flexDirection: 'row',

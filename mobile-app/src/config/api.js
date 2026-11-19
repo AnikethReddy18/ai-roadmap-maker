@@ -67,14 +67,30 @@ export async function apiFetch(endpoint, options = {}) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const url = `${API_BASE_URL}${endpoint}`;
+  // Ensure endpoint is normalized to have /api prefix if missing (except health)
+  let cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  if (!cleanEndpoint.startsWith('/api/') && cleanEndpoint !== '/health' && !cleanEndpoint.startsWith('/api')) {
+    cleanEndpoint = `/api${cleanEndpoint}`;
+  }
+
+  const url = `${API_BASE_URL}${cleanEndpoint}`;
   try {
     const response = await fetch(url, {
       ...options,
       headers
     });
 
-    const data = await response.json();
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}: ${text.slice(0, 120)}`);
+      }
+      throw new Error('Received unexpected non-JSON response from server.');
+    }
+
     if (!response.ok) {
       throw new Error(data.error || 'Server error');
     }

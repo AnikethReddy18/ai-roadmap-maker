@@ -75,9 +75,9 @@ export default function AuthScreen({ onAuthSuccess, navigation, setUser }) {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.bgPaper} />
-      <NotebookBackground showMargin={true}>
+    <NotebookBackground showMargin={true}>
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.bgPaper} />
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -285,20 +285,21 @@ export default function AuthScreen({ onAuthSuccess, navigation, setUser }) {
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
-      </NotebookBackground>
-    </SafeAreaView>
+      </SafeAreaView>
+    </NotebookBackground>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.bgPaper,
+    backgroundColor: 'transparent',
   },
   scrollContainer: {
     paddingHorizontal: 20,
     paddingVertical: 24,
     justifyContent: 'center',
+    flexGrow: 1,
     minHeight: '100%',
   },
   heroSection: {

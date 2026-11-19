@@ -22,6 +22,10 @@
       "package": "com.aniketh1811.airoadmapmobile",
       "usesCleartextTraffic": true
     },
+    "androidNavigationBar": {
+      "backgroundColor": "#faf8f5",
+      "barStyle": "dark-content"
+    },
     "web": {
       "favicon": "./assets/favicon.png"
     },

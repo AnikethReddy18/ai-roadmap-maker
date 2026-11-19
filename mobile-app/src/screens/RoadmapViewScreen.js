@@ -25,6 +25,8 @@ const PASTEL_ROTATION = [
   colors.noteRose,
 ];
 
+const getNodeId = (n) => (n ? (n.id || n._id || '') : '');
+
 export default function RoadmapViewScreen({ route, navigation }) {
   const { roadmap: initialRoadmap } = route.params;
   const [roadmap, setRoadmap] = useState(initialRoadmap);
@@ -52,11 +54,13 @@ export default function RoadmapViewScreen({ route, navigation }) {
         });
       }
     }
-    // Also check completed property directly on nodes
+    // Also check completed property directly on nodes ONLY if not explicitly set in map
     const checkNodes = (nodesList = []) => {
       nodesList.forEach((n) => {
-        if (n && n.id && (n.completed || map[n.id])) {
-          map[n.id] = true;
+        if (!n) return;
+        const id = getNodeId(n);
+        if (id && map[id] === undefined && n.completed) {
+          map[id] = true;
         }
       });
     };
@@ -78,7 +82,10 @@ export default function RoadmapViewScreen({ route, navigation }) {
   }, [roadmap]);
 
   const totalCount = allNodes.length;
-  const completedCount = allNodes.filter((n) => !!completedMap[n.id]).length;
+  const completedCount = allNodes.filter((n) => {
+    const id = getNodeId(n);
+    return !!completedMap[id];
+  }).length;
   const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
   const isFullyCompleted = progressPercent === 100 && totalCount > 0;
 
@@ -92,30 +99,62 @@ export default function RoadmapViewScreen({ route, navigation }) {
       [nodeId]: newStatus,
     };
 
-    setRoadmap((prev) => ({
-      ...prev,
-      completedNodes: newCompletedMap,
-      nodes: (prev.nodes || []).map((n) =>
-        n.id === nodeId ? { ...n, completed: newStatus } : n
-      ),
-      phases: (prev.phases || []).map((phase) => ({
-        ...phase,
-        nodes: (phase.nodes || []).map((n) =>
-          n.id === nodeId ? { ...n, completed: newStatus } : n
-        ),
-      })),
-    }));
+    setRoadmap((prev) => {
+      const updateNode = (n) => {
+        const id = getNodeId(n);
+        return id === nodeId ? { ...n, completed: newStatus } : n;
+      };
 
-    if (selectedNode && selectedNode.id === nodeId) {
-      setSelectedNode((prev) => (prev ? { ...prev, completed: newStatus } : null));
+      const updatedPhases = Array.isArray(prev.phases)
+        ? prev.phases.map((phase) => ({
+            ...phase,
+            nodes: Array.isArray(phase.nodes) ? phase.nodes.map(updateNode) : [],
+          }))
+        : prev.phases;
+
+      const updatedNodes = Array.isArray(prev.nodes)
+        ? prev.nodes.map(updateNode)
+        : updatedPhases
+        ? updatedPhases.flatMap((p) => p.nodes || [])
+        : [];
+
+      return {
+        ...prev,
+        completedNodes: newCompletedMap,
+        nodes: updatedNodes,
+        phases: updatedPhases,
+      };
+    });
+
+    if (selectedNode) {
+      const selId = getNodeId(selectedNode);
+      if (selId === nodeId) {
+        setSelectedNode((prev) => (prev ? { ...prev, completed: newStatus } : null));
+      }
     }
 
     try {
       if (roadmap._id) {
-        await apiFetch(`/roadmaps/${roadmap._id}/complete`, {
+        const updated = await apiFetch(`/api/roadmaps/${roadmap._id}/complete`, {
           method: 'PUT',
           body: JSON.stringify({ nodeId, completed: newStatus }),
         });
+        if (updated && updated.completedNodes) {
+          const syncedMap = {};
+          if (updated.completedNodes instanceof Map) {
+            updated.completedNodes.forEach((v, k) => {
+              syncedMap[k] = !!v;
+            });
+          } else if (typeof updated.completedNodes === 'object') {
+            Object.entries(updated.completedNodes).forEach(([k, v]) => {
+              syncedMap[k] = !!v;
+            });
+          }
+          setRoadmap((prev) => ({
+            ...prev,
+            completedNodes: { ...newCompletedMap, ...syncedMap },
+          }));
+        }
       }
     } catch (error) {
       console.log('Failed to persist node status:', error);
@@ -123,23 +162,90 @@ export default function RoadmapViewScreen({ route, navigation }) {
   };
 
   const handleGenerateSubRoadmap = async (node) => {
+    const nId = getNodeId(node);
     setGeneratingSub(true);
     try {
-      const subData = await apiFetch('/generate/sub', {
+      // 1. Check if a subroadmap for this node already exists in MongoDB
+      let existingSub = null;
+      try {
+        const allRoadmaps = await apiFetch('/api/roadmaps');
+        if (Array.isArray(allRoadmaps)) {
+          existingSub = allRoadmaps.find(
+            (r) =>
+              r.isSubRoadmap &&
+              (r.parentNodeId === nId ||
+                r.title?.toLowerCase() === `${node.title} deep dive`.toLowerCase() ||
+                r.title?.toLowerCase() === node.title?.toLowerCase())
+          );
+        }
+      } catch (checkErr) {
+        console.log('Error checking existing subroadmap:', checkErr.message);
+      }
+
+      if (existingSub) {
+        setSelectedNode(null);
+        navigation.push('RoadmapView', {
+          roadmap: {
+            ...existingSub,
+            nodes:
+              Array.isArray(existingSub.nodes) && existingSub.nodes.length > 0
+                ? existingSub.nodes
+                : existingSub.phases
+                ? existingSub.phases.flatMap((p) => p.nodes || [])
+                : [],
+          },
+        });
+        return;
+      }
+
+      // 2. Generate new subroadmap via /api/generate/sub
+      const subData = await apiFetch('/api/generate/sub', {
         method: 'POST',
         body: JSON.stringify({
           subTopic: node.title,
           parentTopic: roadmap.title,
-          nodeId: node.id || 'sub-1',
+          nodeId: nId || 'sub-1',
         }),
       });
 
       if (subData && (Array.isArray(subData.phases) || Array.isArray(subData.nodes))) {
+        // 3. Immediately persist subroadmap to MongoDB
+        let savedSub = null;
+        try {
+          savedSub = await apiFetch('/api/roadmaps', {
+            method: 'POST',
+            body: JSON.stringify({
+              title: subData.title || `${node.title} Deep Dive`,
+              description: subData.description || '',
+              phases:
+                subData.phases || [
+                  { id: 'phase-1', title: 'Deep Dive', nodes: subData.nodes || [] },
+                ],
+              isSubRoadmap: true,
+              parentNodeId: nId || '',
+            }),
+          });
+        } catch (saveErr) {
+          console.log('Auto-save generated sub-roadmap:', saveErr.message);
+        }
+
         setSelectedNode(null);
+        const finalRoadmap = savedSub || {
+          ...subData,
+          nodes:
+            subData.nodes ||
+            (subData.phases ? subData.phases.flatMap((p) => p.nodes || []) : []),
+        };
+
         navigation.push('RoadmapView', {
           roadmap: {
-            ...subData,
-            nodes: subData.nodes || (subData.phases ? subData.phases.flatMap((p) => p.nodes || []) : []),
+            ...finalRoadmap,
+            nodes:
+              Array.isArray(finalRoadmap.nodes) && finalRoadmap.nodes.length > 0
+                ? finalRoadmap.nodes
+                : finalRoadmap.phases
+                ? finalRoadmap.phases.flatMap((p) => p.nodes || [])
+                : [],
           },
         });
       } else {
@@ -155,9 +261,9 @@ export default function RoadmapViewScreen({ route, navigation }) {
   let globalNodeCounter = 0;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.bgPaper} />
-      <NotebookBackground showMargin={true}>
+    <NotebookBackground showMargin={true}>
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.bgPaper} />
         {/* Top Header */}
         <View style={styles.header}>
           <TouchableOpacity
@@ -169,7 +275,9 @@ export default function RoadmapViewScreen({ route, navigation }) {
           </TouchableOpacity>
 
           <View style={styles.headerInfo}>
-            <Text style={styles.headerSubtitle}>LEARNING PATH</Text>
+            <Text style={styles.headerSubtitle}>
+              {roadmap.isSubRoadmap ? 'SUB-ROADMAP DEEP DIVE' : 'LEARNING PATH'}
+            </Text>
             <Text style={styles.headerTitle} numberOfLines={1}>
               {roadmap.title}
             </Text>
@@ -266,7 +374,8 @@ export default function RoadmapViewScreen({ route, navigation }) {
                 {/* Nodes inside Phase */}
                 <View style={styles.nodesWrapper}>
                   {(phase.nodes || []).map((node, nIdx) => {
-                    const isDone = !!completedMap[node.id];
+                    const nId = getNodeId(node);
+                    const isDone = !!completedMap[nId];
                     const rotation = ((globalNodeCounter * 7) % 3) - 1.2;
                     const cardBg = isDone
                       ? colors.noteGreen
@@ -274,7 +383,7 @@ export default function RoadmapViewScreen({ route, navigation }) {
                     globalNodeCounter += 1;
 
                     return (
-                      <View key={node.id || `node-${nIdx}`} style={styles.nodeItem}>
+                      <View key={nId || `node-${nIdx}`} style={styles.nodeItem}>
                         {/* Connecting vertical line */}
                         {nIdx < (phase.nodes?.length || 0) - 1 && (
                           <View
@@ -292,7 +401,7 @@ export default function RoadmapViewScreen({ route, navigation }) {
                             styles.nodeMarker,
                             isDone && styles.nodeMarkerDone,
                           ]}
-                          onPress={() => handleToggleNodeComplete(node.id, isDone)}
+                          onPress={() => handleToggleNodeComplete(nId, isDone)}
                         >
                           <MaterialCommunityIcons
                             name={isDone ? 'check-bold' : 'circle-outline'}
@@ -312,7 +421,7 @@ export default function RoadmapViewScreen({ route, navigation }) {
                             },
                           ]}
                           onPress={() =>
-                            setSelectedNode({ ...node, completed: isDone })
+                            setSelectedNode({ ...node, id: nId, completed: isDone })
                           }
                         >
                           <View style={styles.nodeHeaderRow}>
@@ -375,14 +484,15 @@ export default function RoadmapViewScreen({ route, navigation }) {
             /* Flat Nodes List */
             <View style={styles.nodesWrapper}>
               {allNodes.map((node, idx) => {
-                const isDone = !!completedMap[node.id];
+                const nId = getNodeId(node);
+                const isDone = !!completedMap[nId];
                 const rotation = ((idx * 7) % 3) - 1.2;
                 const cardBg = isDone
                   ? colors.noteGreen
                   : PASTEL_ROTATION[idx % PASTEL_ROTATION.length];
 
                 return (
-                  <View key={node.id || `node-${idx}`} style={styles.nodeItem}>
+                  <View key={nId || `node-${idx}`} style={styles.nodeItem}>
                     {idx < allNodes.length - 1 && (
                       <View
                         style={[
@@ -398,7 +508,7 @@ export default function RoadmapViewScreen({ route, navigation }) {
                         styles.nodeMarker,
                         isDone && styles.nodeMarkerDone,
                       ]}
-                      onPress={() => handleToggleNodeComplete(node.id, isDone)}
+                      onPress={() => handleToggleNodeComplete(nId, isDone)}
                     >
                       <MaterialCommunityIcons
                         name={isDone ? 'check-bold' : 'circle-outline'}
@@ -417,7 +527,7 @@ export default function RoadmapViewScreen({ route, navigation }) {
                         },
                       ]}
                       onPress={() =>
-                        setSelectedNode({ ...node, completed: isDone })
+                        setSelectedNode({ ...node, id: nId, completed: isDone })
                       }
                     >
                       <View style={styles.nodeHeaderRow}>
@@ -494,7 +604,7 @@ export default function RoadmapViewScreen({ route, navigation }) {
         {selectedNode && (
           <NodeDetailSheet
             node={selectedNode}
-            completed={!!completedMap[selectedNode.id]}
+            completed={!!completedMap[getNodeId(selectedNode)]}
             onClose={() => setSelectedNode(null)}
             onToggleCompleted={(nodeId, currentStatus) =>
               handleToggleNodeComplete(nodeId, currentStatus)
@@ -514,15 +624,15 @@ export default function RoadmapViewScreen({ route, navigation }) {
             navigation={navigation}
           />
         )}
-      </NotebookBackground>
-    </SafeAreaView>
+      </SafeAreaView>
+    </NotebookBackground>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.bgPaper,
+    backgroundColor: 'transparent',
   },
   header: {
     flexDirection: 'row',
@@ -617,6 +727,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 16,
     paddingBottom: 40,
+    flexGrow: 1,
   },
   congratsCard: {
     flexDirection: 'row',
