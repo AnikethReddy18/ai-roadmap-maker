@@ -67,13 +67,18 @@ export default function OnboardingQuiz({ token, onComplete, onLogout, onSaveKey 
   const startDynamicQuiz = async () => {
     if (initialInterests.length === 0) return;
     setCurrentStep(4);
-    await fetchQuestion(4, []);
+    await fetchQuestion(4, [], []);
   };
 
-  const fetchQuestion = async (step, currentHistory) => {
+  const fetchQuestion = async (step, currentHistory, currentAiTreePath = aiTreePath) => {
     setIsLoading(true);
     setError('');
     try {
+      const existingLabels = [
+        ...initialInterests,
+        ...currentAiTreePath.map(item => (typeof item === 'string' ? item : item.label || item.treeNodeLabel))
+      ].filter(Boolean);
+
       const response = await fetch(apiUrl('/api/generate/quiz-step'), {
         method: 'POST',
         headers: {
@@ -84,7 +89,8 @@ export default function OnboardingQuiz({ token, onComplete, onLogout, onSaveKey 
           userCategory,
           initialInterests,
           history: currentHistory, 
-          stepNumber: step - 3 
+          stepNumber: step - 3,
+          existingNodes: existingLabels
         })
       });
       const data = await response.json();
@@ -101,7 +107,15 @@ export default function OnboardingQuiz({ token, onComplete, onLogout, onSaveKey 
 
   const handleOptionSelect = async (option) => {
     const newHistory = [...history, { question: currentQuestionData.question, answer: option }];
-    const newAiTreePath = [...aiTreePath, currentQuestionData.treeNodeLabel];
+    const resolvedParent = currentQuestionData.parentNode || initialInterests[0] || 'General Focus';
+    const newNode = {
+      id: `ai-${aiTreePath.length}`,
+      label: currentQuestionData.treeNodeLabel,
+      parentNode: resolvedParent,
+      parent: resolvedParent,
+      selectedOption: option
+    };
+    const newAiTreePath = [...aiTreePath, newNode];
     
     setHistory(newHistory);
     setAiTreePath(newAiTreePath);
@@ -109,7 +123,7 @@ export default function OnboardingQuiz({ token, onComplete, onLogout, onSaveKey 
     if (currentStep < 13) {
       const nextStep = currentStep + 1;
       setCurrentStep(nextStep);
-      await fetchQuestion(nextStep, newHistory);
+      await fetchQuestion(nextStep, newHistory, newAiTreePath);
     } else {
       await finalizeOnboarding(newAiTreePath);
     }

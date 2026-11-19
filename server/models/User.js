@@ -32,7 +32,7 @@ const UserSchema = new mongoose.Schema({
     default: []
   },
   interestTree: {
-    type: [String],
+    type: [mongoose.Schema.Types.Mixed],
     default: []
   }
 }, { timestamps: true });

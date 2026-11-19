@@ -24,10 +24,86 @@ const PASTEL_COLORS = [
   colors.noteRose,
 ];
 
+const DOMAIN_KEYWORDS = {
+  web: ['web', 'frontend', 'backend', 'fullstack', 'react', 'vue', 'angular', 'svelte', 'css', 'html', 'javascript', 'typescript', 'node', 'express', 'api', 'nextjs', 'tailwind', 'dom', 'browser', 'redux'],
+  data: ['data', 'ml', 'ai', 'machine learning', 'deep learning', 'neural', 'python', 'pandas', 'numpy', 'model', 'nlp', 'computer vision', 'dataset', 'pytorch', 'tensorflow', 'scikit', 'analytics'],
+  mobile: ['mobile', 'app', 'ios', 'android', 'swift', 'flutter', 'react native', 'kotlin', 'expo'],
+  security: ['security', 'cyber', 'cybersecurity', 'hack', 'penetration', 'auth', 'network', 'firewall', 'encryption', 'vulnerability', 'owasp', 'crypto'],
+  cloud: ['cloud', 'devops', 'docker', 'kubernetes', 'aws', 'azure', 'gcp', 'ci/cd', 'terraform', 'linux', 'server', 'deployment', 'infra'],
+  game: ['game', 'unity', 'unreal', 'godot', 'shader', '3d', 'physics', 'c#', 'c++', 'rendering'],
+  design: ['design', 'ui', 'ux', 'figma', 'wireframe', 'color', 'typography', 'prototype', 'animation'],
+  blockchain: ['blockchain', 'solidity', 'crypto', 'web3', 'ethereum', 'smart contract']
+};
+
+/**
+ * Finds the best matching parent node id from registered nodes in the tree.
+ */
+function findParentNodeId(rawParent, label, registeredNodes) {
+  if (!registeredNodes || registeredNodes.length === 0) return 'root';
+
+  // 1. If explicit parent name is provided
+  if (rawParent && typeof rawParent === 'string') {
+    const cleanP = rawParent.trim().toLowerCase();
+
+    // Check direct ID match
+    const idMatch = registeredNodes.find((n) => n.id === rawParent);
+    if (idMatch) return idMatch.id;
+
+    // Check exact label match (case-insensitive)
+    const exactMatch = registeredNodes.find(
+      (n) => n.label.trim().toLowerCase() === cleanP
+    );
+    if (exactMatch) return exactMatch.id;
+
+    // Check contains match
+    const containsMatch = registeredNodes.find((n) => {
+      const nl = n.label.trim().toLowerCase();
+      return nl.includes(cleanP) || cleanP.includes(nl);
+    });
+    if (containsMatch) return containsMatch.id;
+  }
+
+  // 2. Semantic matching against non-root nodes
+  const candidates = registeredNodes.filter((n) => n.id !== 'root');
+  if (candidates.length === 0) return 'root';
+
+  const contextText = `${rawParent || ''} ${label || ''}`.toLowerCase();
+  let bestCandidate = candidates[0];
+  let highestScore = -1;
+
+  candidates.forEach((cand) => {
+    let score = 0;
+    const candLower = cand.label.toLowerCase();
+
+    // Word tokens overlap
+    const tokens = candLower.split(/\W+/).filter((w) => w.length > 2);
+    tokens.forEach((tok) => {
+      if (contextText.includes(tok)) score += 4;
+    });
+
+    // Domain keywords overlap
+    Object.values(DOMAIN_KEYWORDS).forEach((keywords) => {
+      const candInDomain = keywords.some((k) => candLower.includes(k));
+      if (candInDomain) {
+        keywords.forEach((kw) => {
+          if (contextText.includes(kw)) score += 2;
+        });
+      }
+    });
+
+    if (score > highestScore) {
+      highestScore = score;
+      bestCandidate = cand;
+    }
+  });
+
+  return bestCandidate.id;
+}
+
 /**
  * InterestTreeVis for mobile:
- * Computes a broad, multi-child hierarchical tree layout.
- * Each parent node can host multiple children, fanning out broadly horizontally.
+ * Computes an authentic hierarchical tree layout where every child is assigned
+ * to its exact, verified parent node.
  */
 export default function InterestTreeVis({
   userCategory = 'Explorer',
@@ -37,113 +113,135 @@ export default function InterestTreeVis({
   const treeData = useMemo(() => {
     const nodes = [];
     const edges = [];
+    const nodesMap = {};
+    const registeredNodes = [];
+    const childrenMap = {};
+
+    // Helper to register node
+    const addNode = (node) => {
+      nodes.push(node);
+      nodesMap[node.id] = node;
+      registeredNodes.push({ id: node.id, label: node.cleanLabel || node.label });
+      childrenMap[node.id] = [];
+    };
+
+    // Helper to add edge
+    const addEdge = (sourceId, targetId) => {
+      edges.push({ source: sourceId, target: targetId });
+      if (!childrenMap[sourceId]) childrenMap[sourceId] = [];
+      childrenMap[sourceId].push(targetId);
+    };
 
     // Level 0: Root node
     const rootNode = {
       id: 'root',
       label: `👤 ${userCategory || 'Explorer'}`,
+      cleanLabel: userCategory || 'Explorer',
       bgColor: colors.noteYellow,
       level: 0,
-      children: [],
+      parentId: null,
     };
-    nodes.push(rootNode);
+    addNode(rootNode);
 
-    // Level 1: Initial Interests (multiple children from root)
-    const level1Nodes = [];
-    const interests = initialInterests.length > 0 ? initialInterests : ['General Focus'];
+    // Level 1: Initial Interests (children of root)
+    const interests =
+      initialInterests.length > 0 ? initialInterests : ['General Focus'];
 
     interests.forEach((interest, idx) => {
+      const nodeId = `initial-${idx}`;
       const node = {
-        id: `initial-${idx}`,
+        id: nodeId,
         label: interest,
+        cleanLabel: interest,
         bgColor: colors.noteBlue,
         level: 1,
         parentId: 'root',
-        children: [],
       };
-      nodes.push(node);
-      level1Nodes.push(node);
-      edges.push({ source: 'root', target: node.id });
+      addNode(node);
+      addEdge('root', nodeId);
     });
 
-    // Level 2+: Dynamic AI Nodes with broad multi-child distribution
-    const availableParents = [...level1Nodes];
-    const MAX_CHILDREN_PER_NODE = 2;
-    const parentChildrenCount = {};
-    availableParents.forEach((p) => {
-      parentChildrenCount[p.id] = 0;
-    });
-
+    // Level 2+: Dynamic AI Nodes with authentic parent assignment
     aiTreePath.forEach((item, idx) => {
       const nodeId = `ai-${idx}`;
+      const label =
+        typeof item === 'string'
+          ? item
+          : item.label || item.treeNodeLabel || 'Specialization';
+      const rawParent =
+        typeof item === 'object' ? item.parent || item.parentNode : null;
 
-      // Pick parent with lowest children count to distribute broadly
-      let parent = availableParents[0];
-      for (const candidate of availableParents) {
-        if ((parentChildrenCount[candidate.id] || 0) < (parentChildrenCount[parent.id] || 0)) {
-          parent = candidate;
-        }
-      }
-
-      parentChildrenCount[parent.id] = (parentChildrenCount[parent.id] || 0) + 1;
-
-      // When parent reaches capacity, cycle it out if other candidates remain
-      if (parentChildrenCount[parent.id] >= MAX_CHILDREN_PER_NODE) {
-        const pIdx = availableParents.indexOf(parent);
-        if (pIdx !== -1 && availableParents.length > 1) {
-          availableParents.splice(pIdx, 1);
-        }
-      }
+      // Find the true parent ID
+      const parentId = findParentNodeId(rawParent, label, registeredNodes);
+      const parentNode = nodesMap[parentId] || rootNode;
 
       const childNode = {
         id: nodeId,
-        label: `✨ ${item}`,
+        label: `✨ ${label}`,
+        cleanLabel: label,
         bgColor: PASTEL_COLORS[(idx + 2) % PASTEL_COLORS.length],
-        level: parent.level + 1,
-        parentId: parent.id,
-        children: [],
+        level: parentNode.level + 1,
+        parentId: parentId,
       };
 
-      nodes.push(childNode);
-      edges.push({ source: parent.id, target: nodeId });
-
-      availableParents.push(childNode);
-      parentChildrenCount[nodeId] = 0;
+      addNode(childNode);
+      addEdge(parentId, nodeId);
     });
 
-    // Group nodes by levels
-    const levelsMap = {};
-    nodes.forEach((n) => {
-      if (!levelsMap[n.level]) levelsMap[n.level] = [];
-      levelsMap[n.level].push(n);
-    });
+    // HIERARCHICAL REINGOLD-TILFORD / WALKER SUBTREE LAYOUT
+    const H_GAP = 18;
+    const subtreeWidths = {};
 
-    const maxLevel = Math.max(...Object.keys(levelsMap).map(Number), 0);
-    const maxNodesInAnyLevel = Math.max(
-      ...Object.values(levelsMap).map((arr) => arr.length),
-      1
-    );
-
-    const canvasWidth = Math.max(
-      SCREEN_WIDTH - 32,
-      maxNodesInAnyLevel * (NODE_WIDTH + 20) + 40
-    );
-    const canvasHeight = (maxLevel + 1) * LEVEL_HEIGHT + 30;
-
-    // Calculate (x, y) coordinates for each node
-    const positions = {};
-    Object.keys(levelsMap).forEach((lvlStr) => {
-      const lvl = Number(lvlStr);
-      const row = levelsMap[lvl];
-      const count = row.length;
-      const stepX = canvasWidth / (count + 1);
-      const y = 20 + lvl * LEVEL_HEIGHT;
-
-      row.forEach((n, idx) => {
-        const x = stepX * (idx + 1) - NODE_WIDTH / 2;
-        positions[n.id] = { x, y, cx: x + NODE_WIDTH / 2, cy: y + NODE_HEIGHT / 2 };
+    // 1. Post-order traversal to calculate subtree width
+    const computeSubtreeWidth = (nodeId) => {
+      const children = childrenMap[nodeId] || [];
+      if (children.length === 0) {
+        subtreeWidths[nodeId] = NODE_WIDTH;
+        return NODE_WIDTH;
+      }
+      let totalChildWidth = 0;
+      children.forEach((childId, idx) => {
+        const w = computeSubtreeWidth(childId);
+        totalChildWidth += w;
+        if (idx < children.length - 1) totalChildWidth += H_GAP;
       });
-    });
+      subtreeWidths[nodeId] = Math.max(NODE_WIDTH, totalChildWidth);
+      return subtreeWidths[nodeId];
+    };
+
+    const rootSubtreeWidth = computeSubtreeWidth('root');
+    const canvasWidth = Math.max(SCREEN_WIDTH - 32, rootSubtreeWidth + 40);
+
+    let maxLevel = 0;
+    const positions = {};
+
+    // 2. Pre-order traversal to position each parent directly centered above its children
+    const assignPositions = (nodeId, leftX, level) => {
+      if (level > maxLevel) maxLevel = level;
+      const w = subtreeWidths[nodeId];
+      const nodeX = leftX + (w - NODE_WIDTH) / 2;
+      const nodeY = 20 + level * LEVEL_HEIGHT;
+
+      positions[nodeId] = {
+        x: nodeX,
+        y: nodeY,
+        cx: nodeX + NODE_WIDTH / 2,
+        cy: nodeY + NODE_HEIGHT / 2,
+      };
+
+      const children = childrenMap[nodeId] || [];
+      let currentChildLeft = leftX;
+      children.forEach((childId) => {
+        const childWidth = subtreeWidths[childId];
+        assignPositions(childId, currentChildLeft, level + 1);
+        currentChildLeft += childWidth + H_GAP;
+      });
+    };
+
+    const rootLeftX = (canvasWidth - rootSubtreeWidth) / 2;
+    assignPositions('root', rootLeftX, 0);
+
+    const canvasHeight = (maxLevel + 1) * LEVEL_HEIGHT + 40;
 
     return {
       nodes,

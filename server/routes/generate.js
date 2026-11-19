@@ -236,9 +236,78 @@ router.post('/redesign-course', auth, async (req, res) => {
   }
 });
 
+/**
+ * Resolves the parent topic for a quiz node from a pool of candidate parents
+ * using exact matching, substring inclusion, and domain keyword similarity.
+ */
+function resolveParentNode(suggestedParent, candidateParents, initialInterests, question = '', treeNodeLabel = '') {
+  if (!Array.isArray(candidateParents) || candidateParents.length === 0) {
+    return initialInterests[0] || 'General Focus';
+  }
+
+  // 1. Exact case-insensitive match
+  if (suggestedParent && typeof suggestedParent === 'string') {
+    const cleanSug = suggestedParent.trim().toLowerCase();
+    const exact = candidateParents.find(p => p.trim().toLowerCase() === cleanSug);
+    if (exact) return exact;
+
+    // 2. Contains match (either candidate contains suggested or vice-versa)
+    const containsMatch = candidateParents.find(p => {
+      const cleanP = p.trim().toLowerCase();
+      return cleanP.includes(cleanSug) || cleanSug.includes(cleanP);
+    });
+    if (containsMatch) return containsMatch;
+  }
+
+  // 3. Domain taxonomy keywords to semantically score candidate parents
+  const DOMAIN_KEYWORDS = {
+    web: ['web', 'frontend', 'backend', 'fullstack', 'react', 'vue', 'angular', 'svelte', 'css', 'html', 'javascript', 'typescript', 'node', 'express', 'api', 'nextjs', 'tailwind', 'dom', 'browser'],
+    data: ['data', 'ml', 'ai', 'machine learning', 'deep learning', 'neural', 'python', 'pandas', 'numpy', 'model', 'nlp', 'computer vision', 'dataset', 'pytorch', 'tensorflow', 'scikit', 'analytics'],
+    mobile: ['mobile', 'app', 'ios', 'android', 'swift', 'flutter', 'react native', 'kotlin', 'expo'],
+    security: ['security', 'cyber', 'cybersecurity', 'hack', 'penetration', 'auth', 'network', 'firewall', 'encryption', 'vulnerability', 'owasp', 'crypto'],
+    cloud: ['cloud', 'devops', 'docker', 'kubernetes', 'aws', 'azure', 'gcp', 'ci/cd', 'terraform', 'linux', 'server', 'deployment', 'infra'],
+    game: ['game', 'unity', 'unreal', 'godot', 'shader', '3d', 'physics', 'c#', 'c++', 'rendering'],
+    design: ['design', 'ui', 'ux', 'figma', 'wireframe', 'color', 'typography', 'prototype', 'animation'],
+    blockchain: ['blockchain', 'solidity', 'crypto', 'web3', 'ethereum', 'smart contract']
+  };
+
+  const contextText = `${suggestedParent || ''} ${treeNodeLabel || ''} ${question || ''}`.toLowerCase();
+  
+  let bestCandidate = candidateParents[0];
+  let highestScore = -1;
+
+  candidateParents.forEach((cand) => {
+    let score = 0;
+    const candLower = cand.toLowerCase();
+
+    // Word match between candidate and context
+    const candWords = candLower.split(/\W+/).filter(w => w.length > 2);
+    candWords.forEach(w => {
+      if (contextText.includes(w)) score += 3;
+    });
+
+    // Domain keywords match
+    Object.entries(DOMAIN_KEYWORDS).forEach(([domain, keywords]) => {
+      const candBelongsToDomain = keywords.some(k => candLower.includes(k));
+      if (candBelongsToDomain) {
+        keywords.forEach(kw => {
+          if (contextText.includes(kw)) score += 2;
+        });
+      }
+    });
+
+    if (score > highestScore) {
+      highestScore = score;
+      bestCandidate = cand;
+    }
+  });
+
+  return bestCandidate;
+}
+
 // POST /api/generate/quiz-step
 router.post('/quiz-step', auth, async (req, res) => {
-  const { userCategory, initialInterests, history, stepNumber } = req.body;
+  const { userCategory, initialInterests, history, stepNumber, existingNodes } = req.body;
 
   if (!userCategory || !Array.isArray(initialInterests) || !Array.isArray(history) || !stepNumber) {
     return res.status(400).json({ error: 'userCategory, initialInterests, history (array) and stepNumber are required!' });
@@ -254,7 +323,33 @@ router.post('/quiz-step', auth, async (req, res) => {
       return res.status(403).json({ error: 'Gemini API Key is required for the dynamic quiz.' });
     }
 
-    const data = await generateQuizStep(userCategory, initialInterests, history, stepNumber, user.geminiApiKey, 'low');
+    // Build candidates list: initialInterests plus any existing node labels passed in
+    const candidateParents = Array.from(
+      new Set([
+        ...initialInterests,
+        ...(Array.isArray(existingNodes) ? existingNodes : [])
+      ])
+    ).filter(Boolean);
+
+    const data = await generateQuizStep(
+      userCategory,
+      initialInterests,
+      history,
+      stepNumber,
+      user.geminiApiKey,
+      'low',
+      candidateParents
+    );
+
+    // Resolve & guarantee parentNode matches a genuine candidate
+    data.parentNode = resolveParentNode(
+      data.parentNode,
+      candidateParents,
+      initialInterests,
+      data.question,
+      data.treeNodeLabel
+    );
+
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message || 'Quiz generation failed' });

@@ -43,6 +43,80 @@ const getLayoutedElements = (nodes, edges, direction = 'TB') => {
   return { nodes: layoutedNodes, edges };
 };
 
+const DOMAIN_KEYWORDS = {
+  web: ['web', 'frontend', 'backend', 'fullstack', 'react', 'vue', 'angular', 'svelte', 'css', 'html', 'javascript', 'typescript', 'node', 'express', 'api', 'nextjs', 'tailwind', 'dom', 'browser', 'redux'],
+  data: ['data', 'ml', 'ai', 'machine learning', 'deep learning', 'neural', 'python', 'pandas', 'numpy', 'model', 'nlp', 'computer vision', 'dataset', 'pytorch', 'tensorflow', 'scikit', 'analytics'],
+  mobile: ['mobile', 'app', 'ios', 'android', 'swift', 'flutter', 'react native', 'kotlin', 'expo'],
+  security: ['security', 'cyber', 'cybersecurity', 'hack', 'penetration', 'auth', 'network', 'firewall', 'encryption', 'vulnerability', 'owasp', 'crypto'],
+  cloud: ['cloud', 'devops', 'docker', 'kubernetes', 'aws', 'azure', 'gcp', 'ci/cd', 'terraform', 'linux', 'server', 'deployment', 'infra'],
+  game: ['game', 'unity', 'unreal', 'godot', 'shader', '3d', 'physics', 'c#', 'c++', 'rendering'],
+  design: ['design', 'ui', 'ux', 'figma', 'wireframe', 'color', 'typography', 'prototype', 'animation'],
+  blockchain: ['blockchain', 'solidity', 'crypto', 'web3', 'ethereum', 'smart contract']
+};
+
+/**
+ * Finds the best matching parent node id from already registered nodes in the tree.
+ */
+function findParentNodeId(rawParent, label, registeredNodes) {
+  if (registeredNodes.length === 0) return 'root';
+
+  // 1. If explicit parent name is provided
+  if (rawParent && typeof rawParent === 'string') {
+    const cleanP = rawParent.trim().toLowerCase();
+
+    // Check direct ID match
+    const idMatch = registeredNodes.find(n => n.id === rawParent);
+    if (idMatch) return idMatch.id;
+
+    // Check exact label match (case-insensitive)
+    const exactMatch = registeredNodes.find(n => n.label.trim().toLowerCase() === cleanP);
+    if (exactMatch) return exactMatch.id;
+
+    // Check contains match
+    const containsMatch = registeredNodes.find(n => {
+      const nl = n.label.trim().toLowerCase();
+      return nl.includes(cleanP) || cleanP.includes(nl);
+    });
+    if (containsMatch) return containsMatch.id;
+  }
+
+  // 2. Semantic matching against non-root nodes
+  const candidates = registeredNodes.filter(n => n.id !== 'root');
+  if (candidates.length === 0) return 'root';
+
+  const contextText = `${rawParent || ''} ${label || ''}`.toLowerCase();
+  let bestCandidate = candidates[0];
+  let highestScore = -1;
+
+  candidates.forEach(cand => {
+    let score = 0;
+    const candLower = cand.label.toLowerCase();
+
+    // Word tokens overlap
+    const tokens = candLower.split(/\W+/).filter(w => w.length > 2);
+    tokens.forEach(tok => {
+      if (contextText.includes(tok)) score += 4;
+    });
+
+    // Domain keywords overlap
+    Object.values(DOMAIN_KEYWORDS).forEach(keywords => {
+      const candInDomain = keywords.some(k => candLower.includes(k));
+      if (candInDomain) {
+        keywords.forEach(kw => {
+          if (contextText.includes(kw)) score += 2;
+        });
+      }
+    });
+
+    if (score > highestScore) {
+      highestScore = score;
+      bestCandidate = cand;
+    }
+  });
+
+  return bestCandidate.id;
+}
+
 export default function InterestTreeVis({ 
   userCategory = 'User', 
   initialInterests = [], 
@@ -55,7 +129,7 @@ export default function InterestTreeVis({
   const prevTopologyKeyRef = useRef('');
 
   useEffect(() => {
-    const currentTopologyKey = `${userCategory}|${initialInterests.join(',')}|${aiTreePath.join(',')}`;
+    const currentTopologyKey = `${userCategory}|${initialInterests.join(',')}|${JSON.stringify(aiTreePath)}`;
     
     // Skip re-layout if topology hasn't changed (prevents snapping back during node drag)
     if (prevTopologyKeyRef.current === currentTopologyKey && nodes.length > 0) {
@@ -65,9 +139,10 @@ export default function InterestTreeVis({
 
     const initialNodes = [];
     const initialEdges = [];
+    const registeredNodes = []; // Tracks nodes to resolve parents accurately: { id, label }
 
     // 1. Root node
-    initialNodes.push({
+    const rootNode = {
       id: 'root',
       data: { label: `👤 ${userCategory || 'Explorer'}` },
       position: { x: 0, y: 0 },
@@ -80,22 +155,24 @@ export default function InterestTreeVis({
         padding: '8px 12px',
         boxShadow: '3px 3px 0px var(--color-ink)'
       }
-    });
+    };
+    initialNodes.push(rootNode);
+    registeredNodes.push({ id: 'root', label: userCategory || 'Explorer' });
 
     // 2. Layer 1: Initial Interest Branches (Solid Lines)
-    const activeBranchParentIds = [];
-
     if (initialInterests.length === 0) {
       const fallbackId = 'initial-fallback';
       initialNodes.push({
         id: fallbackId,
-        data: { label: 'General Path' },
+        data: { label: 'General Focus' },
         position: { x: 0, y: 0 },
         style: {
           background: 'var(--note-blue)',
           border: '2px solid var(--color-ink)',
           borderRadius: '10px',
-          padding: '6px 10px'
+          padding: '6px 10px',
+          fontWeight: '600',
+          boxShadow: '2px 2px 0px var(--color-ink)'
         }
       });
       initialEdges.push({
@@ -104,7 +181,7 @@ export default function InterestTreeVis({
         target: fallbackId,
         style: { stroke: 'var(--color-primary)', strokeWidth: 2 }
       });
-      activeBranchParentIds.push(fallbackId);
+      registeredNodes.push({ id: fallbackId, label: 'General Focus' });
     } else {
       initialInterests.forEach((interest, index) => {
         const nodeId = `initial-${index}`;
@@ -129,20 +206,11 @@ export default function InterestTreeVis({
           style: { stroke: 'var(--color-primary)', strokeWidth: 2 }
         });
 
-        activeBranchParentIds.push(nodeId);
+        registeredNodes.push({ id: nodeId, label: interest });
       });
     }
 
-    // 3. Layer 2+: Dynamic AI Nodes with Broad Multi-Child Branching
-    // Each parent node can host multiple children (e.g. 2-3 children), fanning out broadly.
-    const parentChildrenCount = {};
-    activeBranchParentIds.forEach((pid) => {
-      parentChildrenCount[pid] = 0;
-    });
-
-    const availableParents = [...activeBranchParentIds];
-    const MAX_CHILDREN_PER_NODE = 2;
-
+    // 3. Layer 2+: Dynamic AI Nodes with Exact & Semantic Parent Assignment
     const PASTEL_COLORS = [
       'var(--note-green)',
       'var(--note-purple)',
@@ -153,34 +221,17 @@ export default function InterestTreeVis({
 
     aiTreePath.forEach((item, index) => {
       const nodeId = `ai-${index}`;
+      const label = typeof item === 'string' ? item : (item.label || item.treeNodeLabel || 'Specialization');
+      const rawParent = typeof item === 'object' ? (item.parent || item.parentNode) : null;
 
-      // Distribute to the parent with fewest children to create a balanced, broad tree
-      let parentId = availableParents[0];
-      for (const candidate of availableParents) {
-        if ((parentChildrenCount[candidate] || 0) < (parentChildrenCount[parentId] || 0)) {
-          parentId = candidate;
-        }
-      }
-
-      parentChildrenCount[parentId] = (parentChildrenCount[parentId] || 0) + 1;
-
-      // If parent has reached max capacity, rotate it out if other parents exist
-      if (parentChildrenCount[parentId] >= MAX_CHILDREN_PER_NODE) {
-        const pIdx = availableParents.indexOf(parentId);
-        if (pIdx !== -1 && availableParents.length > 1) {
-          availableParents.splice(pIdx, 1);
-        }
-      }
-
-      // Add newly created node as a parent candidate for subsequent levels
-      availableParents.push(nodeId);
-      parentChildrenCount[nodeId] = 0;
+      // Find the authentic parent node
+      const parentId = findParentNodeId(rawParent, label, registeredNodes);
 
       const nodeBg = PASTEL_COLORS[index % PASTEL_COLORS.length];
 
       initialNodes.push({
         id: nodeId,
-        data: { label: `✨ ${item}` },
+        data: { label: `✨ ${label}` },
         position: { x: 0, y: 0 },
         style: {
           background: nodeBg,
@@ -200,6 +251,9 @@ export default function InterestTreeVis({
         animated: true,
         style: { stroke: 'var(--color-primary)', strokeWidth: 2, strokeDasharray: '4 4' }
       });
+
+      // Register this node so subsequent sub-questions can branch from it if applicable
+      registeredNodes.push({ id: nodeId, label });
     });
 
     // 4. Calculate layout coordinates

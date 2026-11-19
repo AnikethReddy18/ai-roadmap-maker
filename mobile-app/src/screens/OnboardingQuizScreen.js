@@ -65,13 +65,20 @@ export default function OnboardingQuizScreen({
   const startDynamicQuiz = async () => {
     if (initialInterests.length === 0) return;
     setCurrentStep(3);
-    await fetchQuestion(3, []);
+    await fetchQuestion(3, [], []);
   };
 
-  const fetchQuestion = async (step, currentHistory) => {
+  const fetchQuestion = async (step, currentHistory, currentAiTreePath = aiTreePath) => {
     setLoading(true);
     setError('');
     try {
+      const existingLabels = [
+        ...initialInterests,
+        ...currentAiTreePath.map((item) =>
+          typeof item === 'string' ? item : item.label || item.treeNodeLabel
+        ),
+      ].filter(Boolean);
+
       const data = await apiFetch('/api/generate/quiz-step', {
         method: 'POST',
         body: JSON.stringify({
@@ -79,6 +86,7 @@ export default function OnboardingQuizScreen({
           initialInterests,
           history: currentHistory,
           stepNumber: step - 2,
+          existingNodes: existingLabels,
         }),
       });
       setCurrentQuestionData(data);
@@ -94,7 +102,16 @@ export default function OnboardingQuizScreen({
       ...history,
       { question: currentQuestionData.question, answer: option },
     ];
-    const newAiTreePath = [...aiTreePath, currentQuestionData.treeNodeLabel];
+    const resolvedParent =
+      currentQuestionData.parentNode || initialInterests[0] || 'General Focus';
+    const newNode = {
+      id: `ai-${aiTreePath.length}`,
+      label: currentQuestionData.treeNodeLabel,
+      parentNode: resolvedParent,
+      parent: resolvedParent,
+      selectedOption: option,
+    };
+    const newAiTreePath = [...aiTreePath, newNode];
 
     setHistory(newHistory);
     setAiTreePath(newAiTreePath);
@@ -102,7 +119,7 @@ export default function OnboardingQuizScreen({
     if (currentStep < 10) {
       const nextStep = currentStep + 1;
       setCurrentStep(nextStep);
-      await fetchQuestion(nextStep, newHistory);
+      await fetchQuestion(nextStep, newHistory, newAiTreePath);
     } else {
       await finalizeOnboarding(newAiTreePath);
     }

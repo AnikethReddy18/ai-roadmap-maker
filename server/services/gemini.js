@@ -242,14 +242,45 @@ export async function generateRemedialRoadmap(roadmapTitle, weakTopics, apiKey, 
 /**
  * Generates the next question for the dynamic onboarding quiz.
  */
-export async function generateQuizStep(userCategory, initialInterests, history, stepNumber, apiKey, complexity = 'low') {
+export async function generateQuizStep(userCategory, initialInterests, history, stepNumber, apiKey, complexity = 'low', existingNodes = []) {
+  const candidateParents = Array.from(
+    new Set([
+      ...initialInterests,
+      ...(Array.isArray(existingNodes) ? existingNodes : [])
+    ])
+  ).filter(Boolean);
+
   const prompt = `
-    You are a career and learning profiling agent. The user is a ${userCategory} who has already indicated their core interests are: ${initialInterests.join(', ')}. Your job is to drill down into these specific areas. Based on their answer history, ask the next multiple-choice question to uncover their specific sub-niches, preferred tools, or learning styles within ${initialInterests.join(', ')}. 
+    You are a career and learning profiling agent for an interactive, branching skill-tree onboarding quiz.
+    The user's category is: "${userCategory}".
+    Their primary selected domain(s): ${JSON.stringify(initialInterests)}.
     
-    Current Step Number: ${stepNumber}
-    User History: ${JSON.stringify(history)}
+    Current topics explored in their skill tree:
+    ${JSON.stringify(candidateParents)}
     
-    You must respond ONLY with a raw JSON object. Do not include markdown formatting, markdown code blocks (like \`\`\`json), or any conversational text. The JSON keys must strictly be: "question" (string), "options" (array of exactly 4 strings), and "treeNodeLabel" (string).
+    User quiz history so far:
+    ${JSON.stringify(history)}
+    
+    Current dynamic step number: ${stepNumber}.
+    
+    CRITICAL GOAL - TREE TOPOLOGY AND PARENT ASSIGNMENT:
+    You are creating the next node in the user's skill tree.
+    1. You MUST assign this new topic to a specific, existing parent topic from: ${JSON.stringify(candidateParents)}.
+       - If stepNumber is 1, you MUST choose one of the primary domains: ${JSON.stringify(initialInterests)}.
+       - For subsequent steps, choose either one of the primary domains (to branch out broadly with another sub-topic) OR an already explored sub-topic (to dive deeper into that specific branch).
+       - The child topic MUST logically and semantically belong under that chosen parent topic. For example, a React or CSS topic MUST belong to "Web Development" or "Frontend", NEVER to an unrelated domain like "Data Science" or "Cybersecurity".
+    2. Formulate a targeted multiple-choice question that investigates preferences, focus areas, or skill level in that sub-topic.
+    3. Provide exactly 4 diverse options.
+    4. Provide "treeNodeLabel" (2 to 4 words): a clean, concise name for this new branch node (e.g. "React Ecosystem", "Backend APIs", "Computer Vision", "Cloud Infrastructure").
+    
+    Respond ONLY with a raw JSON object (NO markdown, NO code fences like \`\`\`json, NO surrounding text).
+    Required JSON schema:
+    {
+      "parentNode": string (MUST be an exact match from ${JSON.stringify(candidateParents)}),
+      "treeNodeLabel": string,
+      "question": string,
+      "options": ["string", "string", "string", "string"]
+    }
   `;
 
   return await callGemini(prompt, apiKey, complexity);
