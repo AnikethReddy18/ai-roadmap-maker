@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   X, 
   Clock, 
@@ -11,7 +11,8 @@ import {
   FileText,
   GraduationCap,
   Terminal,
-  Link as LinkIcon
+  Copy,
+  Check
 } from 'lucide-react';
 
 export default function NodeDrawer({ 
@@ -22,21 +23,39 @@ export default function NodeDrawer({
   onGenerateSubRoadmap, 
   onToggleCompleted 
 }) {
+  const [copiedIdx, setCopiedIdx] = useState(null);
+
   const isOpen = !!node;
   const displayResources = (node && node.resources && node.resources.length > 0) 
     ? node.resources 
     : (resources || []);
 
-  // Map resource types to Lucide icons
-  const getResourceIcon = (type = '') => {
-    const cleanType = type.toLowerCase();
-    if (cleanType.includes('video')) return <Play size={16} />;
-    if (cleanType.includes('book')) return <BookOpen size={16} />;
-    if (cleanType.includes('documentation') || cleanType.includes('docs')) return <FileText size={16} />;
-    if (cleanType.includes('article')) return <FileText size={16} />;
-    if (cleanType.includes('tutorial')) return <GraduationCap size={16} />;
-    if (cleanType.includes('interactive') || cleanType.includes('playground')) return <Terminal size={16} />;
-    return <LinkIcon size={16} />;
+  // Map resource types to Lucide icons and pastel colors
+  const getResourceMeta = (type = '', platform = '') => {
+    const cleanType = (type + ' ' + platform).toLowerCase();
+    if (cleanType.includes('video') || cleanType.includes('youtube')) {
+      return { icon: <Play size={16} />, bg: 'var(--note-rose)', color: 'var(--color-error)', label: 'Video' };
+    }
+    if (cleanType.includes('doc') || cleanType.includes('official') || cleanType.includes('mdn') || cleanType.includes('api')) {
+      return { icon: <FileText size={16} />, bg: 'var(--note-blue)', color: 'var(--color-primary)', label: 'Docs' };
+    }
+    if (cleanType.includes('tutorial') || cleanType.includes('course') || cleanType.includes('guide')) {
+      return { icon: <GraduationCap size={16} />, bg: 'var(--note-green)', color: 'var(--color-success)', label: 'Tutorial' };
+    }
+    if (cleanType.includes('interactive') || cleanType.includes('playground') || cleanType.includes('github') || cleanType.includes('code')) {
+      return { icon: <Terminal size={16} />, bg: 'var(--note-purple)', color: '#8b5cf6', label: 'Interactive' };
+    }
+    return { icon: <BookOpen size={16} />, bg: 'var(--note-yellow)', color: 'var(--color-warning)', label: 'Article' };
+  };
+
+  const handleCopyLink = (e, url, idx) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!url) return;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedIdx(idx);
+      setTimeout(() => setCopiedIdx(null), 2000);
+    });
   };
 
   return (
@@ -52,7 +71,12 @@ export default function NodeDrawer({
         {node && (
           <>
             <div className="drawer-header">
-              <h3 className="drawer-title">{node.title}</h3>
+              <div>
+                <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--color-ink-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                  Study Worksheet
+                </span>
+                <h3 className="drawer-title" style={{ marginTop: '2px' }}>{node.title}</h3>
+              </div>
               <button className="drawer-close" onClick={onClose} aria-label="Close details">
                 <X size={22} />
               </button>
@@ -67,7 +91,7 @@ export default function NodeDrawer({
                   <div className="drawer-meta-label">Est. Time</div>
                   <div className="drawer-meta-value" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <Clock size={16} style={{ color: 'var(--color-primary)' }} />
-                    {node.estimatedTime || 'N/A'}
+                    {node.estimatedTime || node.estimatedHours ? `${node.estimatedTime || node.estimatedHours + ' hrs'}` : '1-2 hrs'}
                   </div>
                 </div>
 
@@ -98,7 +122,17 @@ export default function NodeDrawer({
                     color: 'var(--color-ink)'
                   }}
                 >
-                  {completed ? 'Mark as Incomplete' : 'Mark as Completed'}
+                  {completed ? (
+                    <>
+                      <Circle size={16} />
+                      Mark Incomplete
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle size={16} />
+                      Mark Completed
+                    </>
+                  )}
                 </button>
 
                 <button 
@@ -106,7 +140,7 @@ export default function NodeDrawer({
                   onClick={() => onGenerateSubRoadmap(node)}
                 >
                   <Sparkles size={18} />
-                  Generate Sub-Roadmap
+                  Sub-Roadmap
                 </button>
               </div>
 
@@ -114,37 +148,67 @@ export default function NodeDrawer({
               <div className="resources-section">
                 <h4 className="resources-title">
                   <BookOpen size={20} style={{ color: 'var(--color-ink)' }} />
-                  Study Guides & Links
+                  Curated Study Guides & Links
                 </h4>
 
                 {displayResources.length === 0 ? (
                   <p style={{ fontSize: '1.1rem', color: 'var(--color-ink-muted)' }}>
-                    No resource cards found. Try looking up tutorials on the web.
+                    No resource cards embedded for this step yet.
                   </p>
                 ) : (
                   <div className="resource-list">
-                    {displayResources.map((res, idx) => (
-                      <a 
-                        key={idx} 
-                        href={res.url} 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
-                        className="resource-card"
-                      >
-                        <div className="resource-icon-wrapper">
-                          {getResourceIcon(res.type)}
-                        </div>
-                        <div className="resource-info">
-                          <div className="resource-name" title={res.title}>
-                            {res.title}
+                    {displayResources.map((res, idx) => {
+                      const meta = getResourceMeta(res.type, res.platform);
+                      return (
+                        <div 
+                          key={idx} 
+                          className="resource-card"
+                          style={{ position: 'relative' }}
+                        >
+                          <a
+                            href={res.url} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            style={{ display: 'flex', alignItems: 'center', flex: 1, textDecoration: 'none', color: 'inherit' }}
+                          >
+                            <div 
+                              className="resource-icon-wrapper" 
+                              style={{ background: meta.bg, color: meta.color }}
+                            >
+                              {meta.icon}
+                            </div>
+                            <div className="resource-info">
+                              <div className="resource-name" title={res.title}>
+                                {res.title}
+                              </div>
+                              <div className="resource-meta">
+                                {res.platform || meta.label} • {res.type || 'Guide'}
+                              </div>
+                            </div>
+                          </a>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '8px' }}>
+                            <button
+                              onClick={(e) => handleCopyLink(e, res.url, idx)}
+                              className="btn btn-secondary btn-icon"
+                              style={{ width: '28px', height: '28px', padding: 0 }}
+                              title="Copy URL"
+                            >
+                              {copiedIdx === idx ? <Check size={13} color="var(--color-success)" /> : <Copy size={13} />}
+                            </button>
+                            <a
+                              href={res.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Open link in new tab"
+                              style={{ color: 'var(--color-ink-muted)', display: 'inline-flex' }}
+                            >
+                              <ExternalLink size={16} />
+                            </a>
                           </div>
-                          <div className="resource-meta">
-                            {res.platform || 'Documentation'} • {res.type}
-                          </div>
                         </div>
-                        <ExternalLink size={14} style={{ color: 'var(--color-ink-muted)', flexShrink: 0 }} />
-                      </a>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

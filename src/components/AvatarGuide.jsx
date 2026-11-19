@@ -32,35 +32,66 @@ const emotionConfig = {
   }
 };
 
-export default function AvatarGuide({ message, emotion = 'default' }) {
-  const [displayedText, setDisplayedText] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const config = emotionConfig[emotion] || emotionConfig.default;
+const FUN_QUIPS = [
+  "Break down big topics into 30-minute study sprints! ⏱️",
+  "Consistency beats intensity: one step a day builds mastery! 🚀",
+  "Click 'Sub-Roadmap' on any topic in the drawer to drill into prerequisites! 🔍",
+  "Once you reach 100%, test your skills with the Evaluation Quiz! 🏆",
+  "Doodling and taking visual notes increases retention by 40%! 📝",
+  "Curated tracks below are great starting blocks for new domains! 🌌"
+];
+
+export default function AvatarGuide({ message, emotion = 'default', mood }) {
+  const activeEmotion = mood || emotion || 'default';
+  const config = emotionConfig[activeEmotion] || emotionConfig.default;
   const IconComponent = config.icon;
 
-  // Typing animation — resets whenever message changes
+  const [displayedText, setDisplayedText] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const [extraTip, setExtraTip] = useState(null);
+
+  // Typing animation — resets whenever message or extraTip changes
   useEffect(() => {
-    if (!message) return;
+    const textToType = extraTip || message || '';
+    if (!textToType) {
+      setDisplayedText('');
+      return;
+    }
+
     setDisplayedText('');
     setIsTyping(true);
 
     let i = 0;
     const interval = setInterval(() => {
       i++;
-      setDisplayedText(message.slice(0, i));
-      if (i >= message.length) {
+      setDisplayedText(textToType.slice(0, i));
+      if (i >= textToType.length) {
         clearInterval(interval);
         setIsTyping(false);
       }
-    }, 22);
+    }, 20);
 
     return () => clearInterval(interval);
-  }, [message]);
+  }, [message, extraTip]);
+
+  const handleTapAvatar = () => {
+    const randomQuip = FUN_QUIPS[Math.floor(Math.random() * FUN_QUIPS.length)];
+    setExtraTip(randomQuip);
+    setTimeout(() => {
+      setExtraTip(null);
+    }, 6000);
+  };
 
   return (
     <div className="avatar-guide-wrapper">
       {/* Chat Bubble */}
-      <div className="avatar-chat-bubble" style={{ borderColor: config.border }}>
+      <div 
+        className="avatar-chat-bubble" 
+        style={{ 
+          borderColor: config.border,
+          boxShadow: `3px 3px 0px var(--color-ink)`
+        }}
+      >
         <span className="avatar-bubble-text">
           {displayedText}
           {isTyping && <span className="avatar-cursor">|</span>}
@@ -69,16 +100,20 @@ export default function AvatarGuide({ message, emotion = 'default' }) {
         <div className="avatar-bubble-tail" style={{ borderTopColor: config.border }} />
       </div>
 
-      {/* Avatar Circle */}
+      {/* Avatar Circle (Clickable for quick tips) */}
       <div
         className="avatar-circle"
+        onClick={handleTapAvatar}
+        title="Click Cosmo for a study tip!"
         style={{
           background: config.bg,
           borderColor: config.border,
-          boxShadow: `4px 4px 0px ${config.shadow}`
+          boxShadow: `4px 4px 0px ${config.shadow}`,
+          cursor: 'pointer',
+          transition: 'transform 0.15s ease-in-out'
         }}
       >
-        <IconComponent size={36} color={config.border} strokeWidth={1.8} />
+        <IconComponent size={34} color={config.border} strokeWidth={1.8} />
         <span className="avatar-emotion-badge">{config.label}</span>
       </div>
     </div>

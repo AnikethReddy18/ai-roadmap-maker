@@ -7,8 +7,9 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
-        changeOrigin: true
+        target: 'https://ai-roadmap-maker-4blt.onrender.com',
+        changeOrigin: true,
+        secure: true
       }
     }
   }

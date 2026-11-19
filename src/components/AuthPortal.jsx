@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
-import { Sparkles, User, Lock, LogIn, UserPlus, Key } from 'lucide-react';
+import { Sparkles, User, Lock, LogIn, UserPlus, Key, Eye, EyeOff, HelpCircle } from 'lucide-react';
+import { apiUrl } from '../config/api';
 
 export default function AuthPortal({ onLoginSuccess }) {
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -24,7 +27,7 @@ export default function AuthPortal({ onLoginSuccess }) {
     }
 
     setIsLoading(true);
-    const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
+    const endpoint = apiUrl(isLogin ? '/api/auth/login' : '/api/auth/register');
 
     try {
       const body = isLogin 
@@ -67,14 +70,17 @@ export default function AuthPortal({ onLoginSuccess }) {
         style={{ 
           position: 'relative', 
           transform: 'none',
-          maxWidth: '420px',
+          maxWidth: '440px',
           width: '100%',
-          borderRadius: '12px 16px 14px 18px / 18px 14px 16px 12px',
+          borderRadius: '16px',
           background: 'var(--bg-paper)',
-          boxShadow: '10px 10px 0px var(--color-ink)'
+          border: '3px solid var(--color-ink)',
+          boxShadow: '10px 10px 0px var(--color-ink)',
+          padding: '28px'
         }}
       >
-        <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+        {/* Notebook Cover Header */}
+        <div style={{ textAlign: 'center', marginBottom: '22px' }}>
           <div 
             style={{ 
               display: 'inline-flex',
@@ -83,17 +89,87 @@ export default function AuthPortal({ onLoginSuccess }) {
               background: 'var(--note-yellow)',
               border: '2px solid var(--color-ink)',
               color: 'var(--color-ink)',
-              marginBottom: '14px'
+              boxShadow: '3px 3px 0px var(--color-ink)',
+              marginBottom: '12px'
             }}
           >
             <Sparkles size={28} />
           </div>
-          <h2 style={{ fontSize: '2rem', fontFamily: 'var(--font-title)' }}>
-            {isLogin ? 'Cosmic Sketchbook' : 'Join the Sketchbook'}
+          <h2 style={{ fontSize: '2.2rem', fontFamily: 'var(--font-title)', margin: 0 }}>
+            Cosmic Sketchbook
           </h2>
-          <p style={{ color: 'var(--color-ink-muted)', fontSize: '1.1rem', marginTop: '4px' }}>
+          <p style={{ color: 'var(--color-ink-muted)', fontSize: '1.15rem', marginTop: '4px' }}>
             {isLogin ? 'Sign in to map your learning journeys' : 'Register to start tracking your skills'}
           </p>
+        </div>
+
+        {/* Notebook Tabs Switcher */}
+        <div 
+          style={{ 
+            display: 'flex', 
+            background: 'var(--bg-paper)', 
+            border: '2px solid var(--color-ink)', 
+            borderRadius: '12px', 
+            padding: '3px',
+            marginBottom: '20px',
+            boxShadow: '2px 2px 0px var(--color-ink)'
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setIsLogin(true);
+              setError('');
+            }}
+            style={{
+              flex: 1,
+              padding: '8px 12px',
+              border: 'none',
+              borderRadius: '8px',
+              background: isLogin ? 'var(--note-yellow)' : 'transparent',
+              fontWeight: isLogin ? 'bold' : 'normal',
+              color: 'var(--color-ink)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              fontFamily: 'var(--font-body)',
+              fontSize: '1.1rem',
+              boxShadow: isLogin ? '2px 2px 0px var(--color-ink)' : 'none',
+              outline: isLogin ? '1.5px solid var(--color-ink)' : 'none'
+            }}
+          >
+            <LogIn size={16} /> Sign In
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setIsLogin(false);
+              setError('');
+            }}
+            style={{
+              flex: 1,
+              padding: '8px 12px',
+              border: 'none',
+              borderRadius: '8px',
+              background: !isLogin ? 'var(--note-yellow)' : 'transparent',
+              fontWeight: !isLogin ? 'bold' : 'normal',
+              color: 'var(--color-ink)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              fontFamily: 'var(--font-body)',
+              fontSize: '1.1rem',
+              boxShadow: !isLogin ? '2px 2px 0px var(--color-ink)' : 'none',
+              outline: !isLogin ? '1.5px solid var(--color-ink)' : 'none'
+            }}
+          >
+            <UserPlus size={16} /> Create Account
+          </button>
         </div>
 
         {error && (
@@ -101,7 +177,7 @@ export default function AuthPortal({ onLoginSuccess }) {
             style={{
               background: 'var(--note-rose)',
               border: '2px solid var(--color-ink)',
-              borderRadius: '8px 10px 6px 12px/12px 6px 10px 8px',
+              borderRadius: '10px',
               padding: '12px',
               marginBottom: '20px',
               color: 'var(--color-error)',
@@ -115,8 +191,9 @@ export default function AuthPortal({ onLoginSuccess }) {
         )}
 
         <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label" htmlFor="username">
+          {/* Username */}
+          <div className="form-group" style={{ marginBottom: '16px' }}>
+            <label className="form-label" htmlFor="username" style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>
               Username
             </label>
             <div style={{ position: 'relative' }}>
@@ -124,11 +201,12 @@ export default function AuthPortal({ onLoginSuccess }) {
                 id="username"
                 type="text"
                 className="form-input"
-                placeholder="Pencil sketcher name..."
+                placeholder="e.g. alex_explorer"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 style={{ paddingLeft: '40px' }}
                 disabled={isLoading}
+                required
               />
               <User 
                 size={18} 
@@ -143,20 +221,22 @@ export default function AuthPortal({ onLoginSuccess }) {
             </div>
           </div>
 
-          <div className="form-group" style={{ marginBottom: !isLogin ? '14px' : '28px' }}>
-            <label className="form-label" htmlFor="password">
+          {/* Password with Show/Hide */}
+          <div className="form-group" style={{ marginBottom: !isLogin ? '16px' : '24px' }}>
+            <label className="form-label" htmlFor="password" style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>
               Password
             </label>
             <div style={{ position: 'relative' }}>
               <input
                 id="password"
-                type="password"
+                type={showPassword ? "text" : "password"}
                 className="form-input"
-                placeholder="Secret key outline..."
+                placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                style={{ paddingLeft: '40px' }}
+                style={{ paddingLeft: '40px', paddingRight: '40px' }}
                 disabled={isLoading}
+                required
               />
               <Lock 
                 size={18} 
@@ -168,24 +248,64 @@ export default function AuthPortal({ onLoginSuccess }) {
                   color: 'var(--color-ink-muted)'
                 }} 
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{
+                  position: 'absolute',
+                  right: '12px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--color-ink-muted)',
+                  cursor: 'pointer',
+                  padding: 4
+                }}
+                title={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
             </div>
           </div>
 
+          {/* Gemini API Key for Registration */}
           {!isLogin && (
-            <div className="form-group" style={{ marginBottom: '28px' }}>
-              <label className="form-label" htmlFor="geminiApiKey">
-                Gemini API Key
-              </label>
+            <div className="form-group" style={{ marginBottom: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label className="form-label" htmlFor="geminiApiKey" style={{ fontSize: '1.1rem', fontWeight: 'bold', margin: 0 }}>
+                  Gemini API Key
+                </label>
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    fontSize: '0.95rem',
+                    color: 'var(--color-primary)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    textDecoration: 'none',
+                    fontWeight: 'bold'
+                  }}
+                  title="Get free Gemini API Key from Google AI Studio"
+                >
+                  <HelpCircle size={14} />
+                  Free Key Link
+                </a>
+              </div>
               <div style={{ position: 'relative' }}>
                 <input
                   id="geminiApiKey"
-                  type="password"
+                  type={showApiKey ? "text" : "password"}
                   className="form-input"
-                  placeholder="AI API Key required..."
+                  placeholder="AIzaSy..."
                   value={geminiApiKey}
                   onChange={(e) => setGeminiApiKey(e.target.value)}
-                  style={{ paddingLeft: '40px' }}
+                  style={{ paddingLeft: '40px', paddingRight: '40px' }}
                   disabled={isLoading}
+                  required={!isLogin}
                 />
                 <Key 
                   size={18} 
@@ -197,6 +317,24 @@ export default function AuthPortal({ onLoginSuccess }) {
                     color: 'var(--color-ink-muted)'
                   }} 
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  style={{
+                    position: 'absolute',
+                    right: '12px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--color-ink-muted)',
+                    cursor: 'pointer',
+                    padding: 4
+                  }}
+                  title={showApiKey ? "Hide key" : "Show key"}
+                >
+                  {showApiKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </div>
             </div>
           )}
@@ -204,26 +342,26 @@ export default function AuthPortal({ onLoginSuccess }) {
           <button 
             type="submit" 
             className="btn btn-primary" 
-            style={{ width: '100%', padding: '12px', fontSize: '1.25rem', marginBottom: '20px' }}
+            style={{ width: '100%', padding: '12px', fontSize: '1.25rem', marginBottom: '16px' }}
             disabled={isLoading}
           >
             {isLoading ? (
-              <div className="spinner" style={{ width: '18px', height: '18px', borderWidth: '2px' }} />
+              <div className="spinner" style={{ width: '20px', height: '20px', borderWidth: '2px' }} />
             ) : isLogin ? (
               <>
                 <LogIn size={18} />
-                Sign In
+                Sign In to Sketchbook
               </>
             ) : (
               <>
                 <UserPlus size={18} />
-                Register
+                Start My Learning Journey
               </>
             )}
           </button>
         </form>
 
-        <div style={{ textAlign: 'center', borderTop: '2px dashed var(--color-ink-muted)', paddingTop: '16px' }}>
+        <div style={{ textAlign: 'center', borderTop: '2px dashed var(--color-ink-muted)', paddingTop: '14px' }}>
           <button
             type="button"
             onClick={() => {
@@ -238,13 +376,13 @@ export default function AuthPortal({ onLoginSuccess }) {
               border: 'none',
               color: 'var(--color-primary)',
               fontFamily: 'var(--font-body)',
-              fontSize: '1.1rem',
+              fontSize: '1.15rem',
               cursor: 'pointer',
               textDecoration: 'underline'
             }}
             disabled={isLoading}
           >
-            {isLogin ? "Don't have an account? Sign Up" : 'Already have an account? Sign In'}
+            {isLogin ? "New to Cosmic Sketchbook? Sign up here →" : 'Already registered? Sign in here →'}
           </button>
         </div>
       </div>

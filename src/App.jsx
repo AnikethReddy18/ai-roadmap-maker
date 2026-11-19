@@ -8,7 +8,10 @@ import {
   Cpu, 
   LogOut,
   Compass,
-  Brain
+  Brain,
+  Search,
+  X,
+  ArrowRight
 } from 'lucide-react';
 
 import RoadmapView from './components/RoadmapView';
@@ -18,6 +21,27 @@ import AuthPortal from './components/AuthPortal';
 import OnboardingQuiz from './components/OnboardingQuiz';
 import InterestTreeVis from './components/InterestTreeVis';
 import CourseQuizModal from './components/CourseQuizModal';
+import AvatarGuide from './components/AvatarGuide';
+import { apiUrl } from './config/api';
+
+const QUICK_TOPICS = [
+  '⚡ React 19 & Next.js',
+  '🦀 Rust Systems',
+  '🤖 PyTorch ML',
+  '🔒 Ethical Hacking',
+  '☁️ DevOps & AWS',
+  '📊 Data Science',
+  '🎨 UI/UX & Figma',
+];
+
+const PASTEL_CLASSES = [
+  'pastel-yellow',
+  'pastel-blue',
+  'pastel-green',
+  'pastel-purple',
+  'pastel-orange',
+  'pastel-rose'
+];
 
 export default function App() {
   // --- Authentication State ---
@@ -29,6 +53,7 @@ export default function App() {
 
   // --- UI & Application State ---
   const [history, setHistory] = useState([]);
+  const [sidebarSearch, setSidebarSearch] = useState('');
   const [completedNodes, setCompletedNodes] = useState({});
   const [navStack, setNavStack] = useState([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -53,7 +78,7 @@ export default function App() {
 
     const fetchProfile = async () => {
       try {
-        const response = await fetch('/api/auth/me', {
+        const response = await fetch(apiUrl('/api/auth/me'), {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await response.json();
@@ -87,7 +112,7 @@ export default function App() {
 
     const fetchRoadmaps = async () => {
       try {
-        const response = await fetch('/api/roadmaps', {
+        const response = await fetch(apiUrl('/api/roadmaps'), {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await response.json();
@@ -126,7 +151,7 @@ export default function App() {
       setLoadingCurated(true);
       try {
         const keywordsParam = (user.curatedKeywords || []).join(',');
-        const response = await fetch(`/api/roadmaps/curated?keywords=${encodeURIComponent(keywordsParam)}`, {
+        const response = await fetch(apiUrl(`/api/roadmaps/curated?keywords=${encodeURIComponent(keywordsParam)}`), {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await response.json();
@@ -150,7 +175,7 @@ export default function App() {
     const fetchPresets = async () => {
       setLoadingPresets(true);
       try {
-        const response = await fetch('/api/generate/presets', {
+        const response = await fetch(apiUrl('/api/generate/presets'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -221,7 +246,7 @@ export default function App() {
 
   const handleSaveApiKey = async (newKey) => {
     try {
-      const response = await fetch('/api/auth/settings', {
+      const response = await fetch(apiUrl('/api/auth/settings'), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -260,10 +285,31 @@ export default function App() {
     setSelectedNode(null);
   };
 
+  const getRoadmapProgress = (roadmap) => {
+    if (!roadmap) return { completed: 0, total: 0, percent: 0 };
+    const nodes = Array.isArray(roadmap.phases)
+      ? roadmap.phases.flatMap(p => p.nodes || [])
+      : (Array.isArray(roadmap.nodes) ? roadmap.nodes : []);
+    const total = nodes.length;
+    if (total === 0) return { completed: 0, total: 0, percent: 0 };
+    let done = 0;
+    const compMap = roadmap.completedNodes || {};
+    nodes.forEach(n => {
+      const isDone = n.completed || (compMap instanceof Map ? compMap.get(n.id) : compMap[n.id]);
+      if (isDone) done++;
+    });
+    return { completed: done, total, percent: Math.round((done / total) * 100) };
+  };
+
   const handleDeleteHistoryItem = async (e, itemId) => {
     e.stopPropagation();
+    const itemToDelete = history.find(item => item._id === itemId);
+    const title = itemToDelete ? itemToDelete.title : 'this roadmap';
+    if (!window.confirm(`Delete "${title}"? This cannot be undone.`)) {
+      return;
+    }
     try {
-      const response = await fetch(`/api/roadmaps/${itemId}`, {
+      const response = await fetch(apiUrl(`/api/roadmaps/${itemId}`), {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -289,7 +335,7 @@ export default function App() {
     const isCurrentlyCompleted = !!completedNodes[nodeId];
 
     try {
-      const response = await fetch(`/api/roadmaps/${activeRoadmap.id}/complete`, {
+      const response = await fetch(apiUrl(`/api/roadmaps/${activeRoadmap.id}/complete`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -327,7 +373,7 @@ export default function App() {
     setLoadingText(`Synthesizing roadmaps for "${topic}"...`);
     
     try {
-      const genResponse = await fetch('/api/generate', {
+      const genResponse = await fetch(apiUrl('/api/generate'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -338,7 +384,7 @@ export default function App() {
       const genData = await genResponse.json();
       if (!genResponse.ok) throw new Error(genData.error || 'AI synthesis failed');
 
-      const saveResponse = await fetch('/api/roadmaps', {
+      const saveResponse = await fetch(apiUrl('/api/roadmaps'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -379,7 +425,7 @@ export default function App() {
     setSelectedNode(null); 
     
     try {
-      const genResponse = await fetch('/api/generate/sub', {
+      const genResponse = await fetch(apiUrl('/api/generate/sub'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -390,7 +436,7 @@ export default function App() {
       const genData = await genResponse.json();
       if (!genResponse.ok) throw new Error(genData.error || 'Sub-roadmap generation failed');
 
-      const saveResponse = await fetch('/api/roadmaps', {
+      const saveResponse = await fetch(apiUrl('/api/roadmaps'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -428,7 +474,7 @@ export default function App() {
     setIsLoading(true);
     setLoadingText(`Building 10-Question Evaluation Test for "${roadmap.title}"...`);
     try {
-      const response = await fetch('/api/generate/course-quiz', {
+      const response = await fetch(apiUrl('/api/generate/course-quiz'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -450,7 +496,7 @@ export default function App() {
   };
 
   const handleSubmitCourseQuiz = async (quizId, userAnswers) => {
-    const response = await fetch('/api/generate/evaluate-quiz', {
+    const response = await fetch(apiUrl('/api/generate/evaluate-quiz'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -467,7 +513,7 @@ export default function App() {
     setIsLoading(true);
     setLoadingText(`Synthesizing Remedial Roadmap for weak areas (${weakTopics.join(', ')})...`);
     try {
-      const response = await fetch('/api/generate/redesign-course', {
+      const response = await fetch(apiUrl('/api/generate/redesign-course'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -567,32 +613,63 @@ export default function App() {
             New Roadmap
           </button>
 
-          <h3 className="nav-section-title">Saved Paths</h3>
+          <h3 className="nav-section-title">Saved Paths ({history.length})</h3>
+          {history.length > 2 && (
+            <div className="sidebar-search">
+              <Search size={14} style={{ color: 'var(--color-ink-muted)' }} />
+              <input
+                type="text"
+                className="sidebar-search-input"
+                placeholder="Search paths..."
+                value={sidebarSearch}
+                onChange={(e) => setSidebarSearch(e.target.value)}
+              />
+              {sidebarSearch && (
+                <button
+                  type="button"
+                  onClick={() => setSidebarSearch('')}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: 'var(--color-ink-muted)' }}
+                  title="Clear search"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          )}
+
           {history.length === 0 ? (
             <p style={{ fontSize: '1.1rem', color: 'var(--color-ink-muted)', paddingLeft: '8px' }}>
               No roadmaps saved yet. Create one to begin your journey!
             </p>
           ) : (
             <div>
-              {history.map((item) => {
-                const isActive = navStack.length > 0 && navStack[0].id === item._id;
-                return (
-                  <div 
-                    key={item._id} 
-                    className={`history-item ${isActive ? 'active' : ''}`}
-                    onClick={() => handleSelectHistoryItem(item)}
-                  >
-                    <span className="history-item-title">{item.title}</span>
-                    <button 
-                      className="history-item-delete"
-                      onClick={(e) => handleDeleteHistoryItem(e, item._id)}
-                      title="Delete roadmap"
+              {history
+                .filter(item => !sidebarSearch.trim() || item.title?.toLowerCase().includes(sidebarSearch.toLowerCase().trim()))
+                .map((item) => {
+                  const isActive = navStack.length > 0 && navStack[0].id === item._id;
+                  const progress = getRoadmapProgress(item);
+                  return (
+                    <div 
+                      key={item._id} 
+                      className={`history-item ${isActive ? 'active' : ''}`}
+                      onClick={() => handleSelectHistoryItem(item)}
                     >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                );
-              })}
+                      <span className="history-item-title">{item.title}</span>
+                      {progress.total > 0 && (
+                        <span className={`history-progress-badge ${progress.percent === 100 ? 'done' : ''}`} title={`${progress.completed} of ${progress.total} topics completed`}>
+                          {progress.percent}%
+                        </span>
+                      )}
+                      <button 
+                        className="history-item-delete"
+                        onClick={(e) => handleDeleteHistoryItem(e, item._id)}
+                        title="Delete roadmap"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  );
+                })}
             </div>
           )}
         </div>
@@ -705,20 +782,37 @@ export default function App() {
             onNodeClick={(node) => {
               setSelectedNode(node);
             }}
+            onToggleCompleted={handleToggleNodeCompleted}
             onStartCourseQuiz={handleStartCourseQuiz}
           />
         ) : (
           <div className="welcome-container" style={{ display: 'flex', gap: '40px', textAlign: 'left', maxWidth: '1100px' }}>
             
             <div style={{ flex: 1, overflowY: 'auto', paddingRight: '12px' }}>
-              <div className="personalized-header" style={{ marginBottom: '40px' }}>
-                <h2 className="welcome-title" style={{ fontSize: '3rem', marginBottom: '16px' }}>Welcome back, {user.username}! 🌌</h2>
-                <p className="welcome-subtitle" style={{ margin: 0 }}>Plot your next learning adventure. Generate a structured, multi-phase curriculum of milestones and study resources.</p>
+              {/* Cosmo Assistant Banner on Dashboard */}
+              <div style={{ marginBottom: '28px' }}>
+                <AvatarGuide 
+                  message={
+                    isLoading 
+                      ? "Cosmo is synthesizing your structured multi-phase curriculum with embedded study resources... ✨"
+                      : `Welcome back, ${user.username}! Type what skill or technology you want to learn below, or pick an interactive track!`
+                  }
+                  emotion={isLoading ? 'thinking' : 'happy'}
+                />
+              </div>
+
+              <div className="personalized-header" style={{ marginBottom: '24px' }}>
+                <h2 className="welcome-title" style={{ fontSize: '2.8rem', marginBottom: '8px' }}>
+                  What would you like to master? 🌌
+                </h2>
+                <p className="welcome-subtitle" style={{ margin: 0 }}>
+                  Plot your next learning adventure. Generate a structured, multi-phase curriculum of milestones and study resources.
+                </p>
               </div>
 
               <form 
                 className="gen-form"
-                style={{ margin: '0 0 40px 0', maxWidth: '100%' }}
+                style={{ margin: '0 0 16px 0', maxWidth: '100%', position: 'relative' }}
                 onSubmit={(e) => {
                   e.preventDefault();
                   handleCreateRoadmap(inputText);
@@ -727,15 +821,40 @@ export default function App() {
                 <input 
                   type="text" 
                   className="gen-input" 
-                  placeholder="What do you want to learn? (e.g. Kubernetes, Piano)..."
+                  placeholder="What do you want to learn? (e.g. Master Rust, Next.js 15, Machine Learning)..."
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
                   required
                 />
-                <button type="submit" className="btn btn-primary">
+                {inputText && (
+                  <button
+                    type="button"
+                    onClick={() => setInputText('')}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 10px', color: 'var(--color-ink-muted)', display: 'flex', alignItems: 'center' }}
+                    title="Clear input"
+                  >
+                    <X size={18} />
+                  </button>
+                )}
+                <button type="submit" className="btn btn-primary" disabled={isLoading}>
+                  <Sparkles size={18} />
                   Generate Path
                 </button>
               </form>
+
+              {/* Quick Inspiration Chips */}
+              <div className="gen-chips" style={{ margin: '0 0 36px 0', justifyContent: 'flex-start' }}>
+                {QUICK_TOPICS.map((topic, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    className="gen-chip"
+                    onClick={() => setInputText(topic.replace(/^[^\w]+/, ''))}
+                  >
+                    {topic}
+                  </button>
+                ))}
+              </div>
 
               {/* SECTION 1: Curated by Experts */}
               <div style={{ marginBottom: '40px' }}>
@@ -750,13 +869,26 @@ export default function App() {
                    </div>
                 ) : (
                   <div className="presets-grid">
-                    {curatedRoadmaps.map((r, idx) => (
-                      <div key={idx} className="preset-card" onClick={() => handleCreateRoadmap(r.title)}>
-                        <span style={{ fontSize: '2rem' }}>{r.icon}</span>
-                        <div className="preset-title">{r.title}</div>
-                        <div className="preset-desc">{r.desc}</div>
-                      </div>
-                    ))}
+                    {curatedRoadmaps.map((r, idx) => {
+                      const pastelClass = PASTEL_CLASSES[idx % PASTEL_CLASSES.length];
+                      const rot = (idx % 2 === 0 ? '-0.8deg' : '0.8deg');
+                      return (
+                        <div 
+                          key={idx} 
+                          className={`preset-card ${pastelClass}`} 
+                          onClick={() => handleCreateRoadmap(r.title)}
+                          style={{ transform: `rotate(${rot})` }}
+                        >
+                          <span style={{ fontSize: '2rem' }}>{r.icon}</span>
+                          <div className="preset-title" style={{ marginTop: '8px' }}>{r.title}</div>
+                          <div className="preset-desc">{r.desc}</div>
+                          <div className="preset-action-hint">
+                            <span>Draw Path</span>
+                            <ArrowRight size={14} />
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -774,13 +906,26 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="presets-grid">
-                    {dynamicPresets.map((presetTitle, idx) => (
-                      <div key={idx} className="preset-card" onClick={() => handleCreateRoadmap(presetTitle)} style={{ border: '2px solid var(--color-success)' }}>
-                        <span style={{ fontSize: '2rem' }}>✨</span>
-                        <div className="preset-title">{presetTitle}</div>
-                        <div className="preset-desc">A highly specialized cosmic journey mapped for your unique AI deep-dive.</div>
-                      </div>
-                    ))}
+                    {dynamicPresets.map((presetTitle, idx) => {
+                      const pastelClass = PASTEL_CLASSES[(idx + 2) % PASTEL_CLASSES.length];
+                      const rot = (idx % 2 === 0 ? '0.8deg' : '-0.8deg');
+                      return (
+                        <div 
+                          key={idx} 
+                          className={`preset-card ${pastelClass}`} 
+                          onClick={() => handleCreateRoadmap(presetTitle)}
+                          style={{ transform: `rotate(${rot})` }}
+                        >
+                          <span style={{ fontSize: '2rem' }}>✨</span>
+                          <div className="preset-title" style={{ marginTop: '8px' }}>{presetTitle}</div>
+                          <div className="preset-desc">A highly specialized cosmic journey mapped for your unique AI deep-dive.</div>
+                          <div className="preset-action-hint">
+                            <span>Draw Path</span>
+                            <ArrowRight size={14} />
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
