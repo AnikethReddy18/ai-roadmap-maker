@@ -133,25 +133,62 @@ export default function InterestTreeVis({
       });
     }
 
-    // 3. Layer 2+: Dynamic AI Nodes (Round-Robin Branching across initial interests)
-    const branchPointers = [...activeBranchParentIds];
+    // 3. Layer 2+: Dynamic AI Nodes with Broad Multi-Child Branching
+    // Each parent node can host multiple children (e.g. 2-3 children), fanning out broadly.
+    const parentChildrenCount = {};
+    activeBranchParentIds.forEach((pid) => {
+      parentChildrenCount[pid] = 0;
+    });
+
+    const availableParents = [...activeBranchParentIds];
+    const MAX_CHILDREN_PER_NODE = 2;
+
+    const PASTEL_COLORS = [
+      'var(--note-green)',
+      'var(--note-purple)',
+      'var(--note-orange)',
+      'var(--note-rose)',
+      'var(--note-yellow)'
+    ];
 
     aiTreePath.forEach((item, index) => {
       const nodeId = `ai-${index}`;
-      // Round-robin target branch to distribute tree growth evenly
-      const targetBranchIndex = index % branchPointers.length;
-      const parentId = branchPointers[targetBranchIndex];
+
+      // Distribute to the parent with fewest children to create a balanced, broad tree
+      let parentId = availableParents[0];
+      for (const candidate of availableParents) {
+        if ((parentChildrenCount[candidate] || 0) < (parentChildrenCount[parentId] || 0)) {
+          parentId = candidate;
+        }
+      }
+
+      parentChildrenCount[parentId] = (parentChildrenCount[parentId] || 0) + 1;
+
+      // If parent has reached max capacity, rotate it out if other parents exist
+      if (parentChildrenCount[parentId] >= MAX_CHILDREN_PER_NODE) {
+        const pIdx = availableParents.indexOf(parentId);
+        if (pIdx !== -1 && availableParents.length > 1) {
+          availableParents.splice(pIdx, 1);
+        }
+      }
+
+      // Add newly created node as a parent candidate for subsequent levels
+      availableParents.push(nodeId);
+      parentChildrenCount[nodeId] = 0;
+
+      const nodeBg = PASTEL_COLORS[index % PASTEL_COLORS.length];
 
       initialNodes.push({
         id: nodeId,
         data: { label: `✨ ${item}` },
         position: { x: 0, y: 0 },
         style: {
-          background: 'var(--note-purple)',
+          background: nodeBg,
           border: '2px solid var(--color-ink)',
           borderRadius: '10px',
-          padding: '6px 10px',
+          padding: '6px 12px',
           fontSize: '0.9rem',
+          fontWeight: '600',
           boxShadow: '2px 2px 0px var(--color-ink)'
         }
       });
@@ -161,11 +198,8 @@ export default function InterestTreeVis({
         source: parentId,
         target: nodeId,
         animated: true,
-        style: { stroke: 'var(--color-primary)', strokeWidth: 2, strokeDasharray: '5 5' }
+        style: { stroke: 'var(--color-primary)', strokeWidth: 2, strokeDasharray: '4 4' }
       });
-
-      // Update pointer for this branch to build deeper sub-branches
-      branchPointers[targetBranchIndex] = nodeId;
     });
 
     // 4. Calculate layout coordinates

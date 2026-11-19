@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -33,12 +33,41 @@ export default function RoadmapViewScreen({ route, navigation }) {
   const [selectedNode, setSelectedNode] = useState(null);
   const [quizModalVisible, setQuizModalVisible] = useState(false);
   const [generatingSub, setGeneratingSub] = useState(false);
+  const [subroadmapsMap, setSubroadmapsMap] = useState({});
 
   useEffect(() => {
     if (route.params?.roadmap) {
       setRoadmap(route.params.roadmap);
     }
   }, [route.params?.roadmap]);
+
+  // Load existing saved sub-roadmaps for this user once
+  const loadSubRoadmaps = useCallback(async () => {
+    try {
+      const allRoadmaps = await apiFetch('/api/roadmaps');
+      if (Array.isArray(allRoadmaps)) {
+        const map = {};
+        allRoadmaps.forEach((r) => {
+          if (r.isSubRoadmap) {
+            if (r.parentNodeId) map[r.parentNodeId] = r;
+            if (r.title) {
+              const lower = r.title.toLowerCase();
+              map[lower] = r;
+              const clean = lower.replace(/ deep dive$/i, '').trim();
+              map[clean] = r;
+            }
+          }
+        });
+        setSubroadmapsMap(map);
+      }
+    } catch (e) {
+      console.log('Error loading saved subroadmaps:', e.message);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSubRoadmaps();
+  }, [loadSubRoadmaps]);
 
   // Normalize completedNodes map
   const completedMap = useMemo(() => {
@@ -161,44 +190,31 @@ export default function RoadmapViewScreen({ route, navigation }) {
     }
   };
 
+  const handleOpenSubRoadmap = (existingSub) => {
+    setSelectedNode(null);
+    navigation.push('RoadmapView', {
+      roadmap: {
+        ...existingSub,
+        nodes:
+          Array.isArray(existingSub.nodes) && existingSub.nodes.length > 0
+            ? existingSub.nodes
+            : existingSub.phases
+            ? existingSub.phases.flatMap((p) => p.nodes || [])
+            : [],
+      },
+    });
+  };
+
   const handleGenerateSubRoadmap = async (node) => {
     const nId = getNodeId(node);
+    const existingSub = subroadmapsMap[nId] || subroadmapsMap[node.title?.toLowerCase()];
+    if (existingSub) {
+      handleOpenSubRoadmap(existingSub);
+      return;
+    }
+
     setGeneratingSub(true);
     try {
-      // 1. Check if a subroadmap for this node already exists in MongoDB
-      let existingSub = null;
-      try {
-        const allRoadmaps = await apiFetch('/api/roadmaps');
-        if (Array.isArray(allRoadmaps)) {
-          existingSub = allRoadmaps.find(
-            (r) =>
-              r.isSubRoadmap &&
-              (r.parentNodeId === nId ||
-                r.title?.toLowerCase() === `${node.title} deep dive`.toLowerCase() ||
-                r.title?.toLowerCase() === node.title?.toLowerCase())
-          );
-        }
-      } catch (checkErr) {
-        console.log('Error checking existing subroadmap:', checkErr.message);
-      }
-
-      if (existingSub) {
-        setSelectedNode(null);
-        navigation.push('RoadmapView', {
-          roadmap: {
-            ...existingSub,
-            nodes:
-              Array.isArray(existingSub.nodes) && existingSub.nodes.length > 0
-                ? existingSub.nodes
-                : existingSub.phases
-                ? existingSub.phases.flatMap((p) => p.nodes || [])
-                : [],
-          },
-        });
-        return;
-      }
-
-      // 2. Generate new subroadmap via /api/generate/sub
       const subData = await apiFetch('/api/generate/sub', {
         method: 'POST',
         body: JSON.stringify({
@@ -209,7 +225,6 @@ export default function RoadmapViewScreen({ route, navigation }) {
       });
 
       if (subData && (Array.isArray(subData.phases) || Array.isArray(subData.nodes))) {
-        // 3. Immediately persist subroadmap to MongoDB
         let savedSub = null;
         try {
           savedSub = await apiFetch('/api/roadmaps', {
@@ -229,7 +244,6 @@ export default function RoadmapViewScreen({ route, navigation }) {
           console.log('Auto-save generated sub-roadmap:', saveErr.message);
         }
 
-        setSelectedNode(null);
         const finalRoadmap = savedSub || {
           ...subData,
           nodes:
@@ -237,6 +251,15 @@ export default function RoadmapViewScreen({ route, navigation }) {
             (subData.phases ? subData.phases.flatMap((p) => p.nodes || []) : []),
         };
 
+        // Cache immediately so this node is never re-generated
+        setSubroadmapsMap((prev) => ({
+          ...prev,
+          [nId]: finalRoadmap,
+          [node.title?.toLowerCase()]: finalRoadmap,
+          [(finalRoadmap.title || '').toLowerCase()]: finalRoadmap,
+        }));
+
+        setSelectedNode(null);
         navigation.push('RoadmapView', {
           roadmap: {
             ...finalRoadmap,
@@ -376,6 +399,7 @@ export default function RoadmapViewScreen({ route, navigation }) {
                   {(phase.nodes || []).map((node, nIdx) => {
                     const nId = getNodeId(node);
                     const isDone = !!completedMap[nId];
+                    const hasSub = !!(subroadmapsMap[nId] || subroadmapsMap[node.title?.toLowerCase()]);
                     const rotation = ((globalNodeCounter * 7) % 3) - 1.2;
                     const cardBg = isDone
                       ? colors.noteGreen
@@ -464,6 +488,17 @@ export default function RoadmapViewScreen({ route, navigation }) {
                               </View>
                             ) : null}
 
+                            {hasSub && (
+                              <View style={styles.subSavedTag}>
+                                <MaterialCommunityIcons
+                                  name="source-branch"
+                                  size={12}
+                                  color={colors.accentPurple}
+                                />
+                                <Text style={styles.subSavedTagText}>Sub-Path Ready</Text>
+                              </View>
+                            )}
+
                             <View style={styles.openDetailHint}>
                               <Text style={styles.openDetailText}>Details</Text>
                               <MaterialCommunityIcons
@@ -486,6 +521,7 @@ export default function RoadmapViewScreen({ route, navigation }) {
               {allNodes.map((node, idx) => {
                 const nId = getNodeId(node);
                 const isDone = !!completedMap[nId];
+                const hasSub = !!(subroadmapsMap[nId] || subroadmapsMap[node.title?.toLowerCase()]);
                 const rotation = ((idx * 7) % 3) - 1.2;
                 const cardBg = isDone
                   ? colors.noteGreen
@@ -567,6 +603,17 @@ export default function RoadmapViewScreen({ route, navigation }) {
                           </View>
                         ) : null}
 
+                        {hasSub && (
+                          <View style={styles.subSavedTag}>
+                            <MaterialCommunityIcons
+                              name="source-branch"
+                              size={12}
+                              color={colors.accentPurple}
+                            />
+                            <Text style={styles.subSavedTagText}>Sub-Path Ready</Text>
+                          </View>
+                        )}
+
                         <View style={styles.openDetailHint}>
                           <Text style={styles.openDetailText}>Details</Text>
                           <MaterialCommunityIcons
@@ -609,6 +656,11 @@ export default function RoadmapViewScreen({ route, navigation }) {
             onToggleCompleted={(nodeId, currentStatus) =>
               handleToggleNodeComplete(nodeId, currentStatus)
             }
+            existingSubRoadmap={
+              subroadmapsMap[getNodeId(selectedNode)] ||
+              subroadmapsMap[selectedNode?.title?.toLowerCase()]
+            }
+            onOpenSubRoadmap={handleOpenSubRoadmap}
             onGenerateSubRoadmap={(node) => handleGenerateSubRoadmap(node)}
             loadingSub={generatingSub}
           />
@@ -913,6 +965,22 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     color: colors.ink,
+  },
+  subSavedTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.notePurple,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    gap: 4,
+  },
+  subSavedTagText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: colors.accentPurple,
   },
   openDetailHint: {
     flexDirection: 'row',

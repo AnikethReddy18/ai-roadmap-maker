@@ -22,6 +22,8 @@ export default function NodeDetailSheet({
   onToggleComplete,
   onGenerateSubRoadmap,
   onGenerateSub,
+  existingSubRoadmap = null,
+  onOpenSubRoadmap,
   loadingSub = false,
 }) {
   if (!node) return null;
@@ -33,7 +35,11 @@ export default function NodeDetailSheet({
     }
   };
 
-  const handleGenerateSub = () => {
+  const handleSubRoadmapPress = () => {
+    if (existingSubRoadmap && typeof onOpenSubRoadmap === 'function') {
+      onOpenSubRoadmap(existingSubRoadmap);
+      return;
+    }
     const fn = onGenerateSubRoadmap || onGenerateSub;
     if (typeof fn === 'function') {
       fn(node);
@@ -155,6 +161,21 @@ export default function NodeDetailSheet({
                   />
                 }
               />
+
+              {existingSubRoadmap && (
+                <SketchBadge
+                  label="Saved Sub-Path 📑"
+                  bgColor={colors.notePurple}
+                  textColor={colors.accentPurple}
+                  icon={
+                    <MaterialCommunityIcons
+                      name="source-branch"
+                      size={14}
+                      color={colors.accentPurple}
+                    />
+                  }
+                />
+              )}
             </View>
 
             {/* Action Buttons */}
@@ -181,12 +202,27 @@ export default function NodeDetailSheet({
 
               <TouchableOpacity
                 activeOpacity={0.8}
-                style={[styles.actionButton, styles.subRoadmapBtn]}
-                onPress={handleGenerateSub}
+                style={[
+                  styles.actionButton,
+                  styles.subRoadmapBtn,
+                  existingSubRoadmap && { backgroundColor: colors.notePurple },
+                ]}
+                onPress={handleSubRoadmapPress}
                 disabled={loadingSub}
               >
                 {loadingSub ? (
                   <ActivityIndicator size="small" color={colors.white} />
+                ) : existingSubRoadmap ? (
+                  <>
+                    <MaterialCommunityIcons
+                      name="source-branch"
+                      size={18}
+                      color={colors.ink}
+                    />
+                    <Text style={[styles.actionButtonText, { color: colors.ink }]}>
+                      Open Sub-Roadmap
+                    </Text>
+                  </>
                 ) : (
                   <>
                     <MaterialCommunityIcons
@@ -195,7 +231,7 @@ export default function NodeDetailSheet({
                       color={colors.white}
                     />
                     <Text style={[styles.actionButtonText, { color: colors.white }]}>
-                      Sub-Roadmap
+                      Generate Sub-Roadmap
                     </Text>
                   </>
                 )}

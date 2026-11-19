@@ -57,11 +57,13 @@ export default function AuthScreen({ onAuthSuccess, navigation, setUser }) {
       });
 
       await setAuthToken(data.token);
+      const userObj = data.user || data;
       if (typeof onAuthSuccess === 'function') {
-        onAuthSuccess(data.token, data.user);
+        onAuthSuccess(data.token, userObj);
       } else {
-        setUser?.(data.user);
-        if (data.user?.onboardingCompleted) {
+        setUser?.(userObj);
+        const hasCompleted = !!(userObj?.hasCompletedOnboarding || userObj?.onboardingCompleted);
+        if (hasCompleted) {
           navigation?.replace('Home');
         } else {
           navigation?.replace('Onboarding');

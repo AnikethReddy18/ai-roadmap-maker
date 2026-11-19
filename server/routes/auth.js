@@ -41,9 +41,11 @@ router.post('/register', async (req, res) => {
       token,
       user: {
         id: savedUser._id,
+        _id: savedUser._id,
         username: savedUser.username,
         hasApiKey: true,
         hasCompletedOnboarding: false,
+        onboardingCompleted: false,
         userCategory: '',
         curatedKeywords: [],
         initialInterests: [],
@@ -81,9 +83,11 @@ router.post('/login', async (req, res) => {
       token,
       user: {
         id: targetUser._id,
+        _id: targetUser._id,
         username: targetUser.username,
         hasApiKey: !!targetUser.geminiApiKey,
         hasCompletedOnboarding: !!targetUser.hasCompletedOnboarding,
+        onboardingCompleted: !!targetUser.hasCompletedOnboarding,
         userCategory: targetUser.userCategory || '',
         curatedKeywords: targetUser.curatedKeywords || [],
         initialInterests: targetUser.initialInterests || [],
@@ -107,15 +111,23 @@ router.get('/me', auth, async (req, res) => {
       return res.status(401).json({ error: 'Session expired. Please sign in again.' });
     }
 
-    res.json({
+    const payload = {
       id: user._id,
+      _id: user._id,
       username: user.username,
       geminiApiKey: user.geminiApiKey || '',
+      hasApiKey: !!user.geminiApiKey,
       hasCompletedOnboarding: !!user.hasCompletedOnboarding,
+      onboardingCompleted: !!user.hasCompletedOnboarding,
       userCategory: user.userCategory || '',
       curatedKeywords: user.curatedKeywords || [],
       initialInterests: user.initialInterests || [],
       interestTree: user.interestTree || []
+    };
+
+    res.json({
+      ...payload,
+      user: payload
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -176,9 +188,11 @@ router.put('/onboarding', auth, async (req, res) => {
 
     res.json({
       id: user._id,
+      _id: user._id,
       username: user.username,
       geminiApiKey: user.geminiApiKey || '',
       hasCompletedOnboarding: true,
+      onboardingCompleted: true,
       userCategory: user.userCategory,
       curatedKeywords: user.curatedKeywords,
       initialInterests: user.initialInterests,

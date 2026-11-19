@@ -14,6 +14,7 @@ import { colors } from '../theme/colors';
 import AvatarGuide from '../components/AvatarGuide';
 import NotebookBackground from '../components/NotebookBackground';
 import SketchBadge from '../components/SketchBadge';
+import InterestTreeVis from '../components/InterestTreeVis';
 import { apiFetch } from '../config/api';
 
 const USER_CATEGORIES = [
@@ -339,7 +340,26 @@ export default function OnboardingQuizScreen({
                   </TouchableOpacity>
                 ))}
               </View>
+
+              {/* Skip / Finish Early button */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={styles.skipBtn}
+                onPress={() => finalizeOnboarding(aiTreePath)}
+              >
+                <Text style={styles.skipBtnText}>Skip and Build My Roadmap Early</Text>
+                <MaterialCommunityIcons name="fast-forward" size={16} color={colors.inkMuted} />
+              </TouchableOpacity>
             </View>
+          )}
+
+          {/* Interactive Interest Tree Visualization */}
+          {currentStep >= 2 && (
+            <InterestTreeVis
+              userCategory={userCategory}
+              initialInterests={initialInterests}
+              aiTreePath={aiTreePath}
+            />
           )}
 
           {loading && (
@@ -603,6 +623,25 @@ const styles = StyleSheet.create({
   },
   loadingLabel: {
     marginTop: 10,
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.inkMuted,
+  },
+  skipBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: colors.inkMuted,
+    backgroundColor: 'transparent',
+    gap: 6,
+  },
+  skipBtnText: {
     fontSize: 12,
     fontWeight: '700',
     color: colors.inkMuted,

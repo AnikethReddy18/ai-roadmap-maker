@@ -26,13 +26,14 @@ export default function App() {
       const token = await getAuthToken();
       if (token) {
         const userData = await apiFetch('/api/auth/me');
-        if (userData && userData.user) {
-          setUser(userData.user);
-          if (userData.user.onboardingCompleted) {
-            setInitialRoute('Home');
-          } else {
-            setInitialRoute('Onboarding');
-          }
+        const userObj = userData?.user || userData;
+        if (userObj && (userObj.id || userObj._id || userObj.username)) {
+          setUser(userObj);
+          const hasCompleted = !!(
+            userObj.hasCompletedOnboarding ||
+            userObj.onboardingCompleted
+          );
+          setInitialRoute(hasCompleted ? 'Home' : 'Onboarding');
         }
       }
     } catch (error) {
@@ -68,8 +69,13 @@ export default function App() {
               user={user}
               setUser={setUser}
               onAuthSuccess={(token, userData) => {
-                setUser(userData);
-                if (userData && userData.onboardingCompleted) {
+                const userObj = userData?.user || userData;
+                setUser(userObj);
+                const hasCompleted = !!(
+                  userObj?.hasCompletedOnboarding ||
+                  userObj?.onboardingCompleted
+                );
+                if (hasCompleted) {
                   props.navigation.replace('Home');
                 } else {
                   props.navigation.replace('Onboarding');
